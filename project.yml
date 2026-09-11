@@ -1,0 +1,52 @@
+name: Manabi
+options:
+  bundleIdPrefix: app.manabi
+  deploymentTarget:
+    iOS: "18.0"
+  xcodeVersion: "26.0"
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: 1
+    DEVELOPMENT_TEAM: ""
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+    GENERATE_INFOPLIST_FILE: NO
+targets:
+  Manabi:
+    type: application
+    platform: iOS
+    sources:
+      - Manabi
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.manabi.ios
+        INFOPLIST_FILE: Manabi/Resources/Info.plist
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SUPPORTS_MACCATALYST: NO
+    scheme:
+      testTargets:
+        - ManabiTests
+        - ManabiUITests
+      gatherCoverageData: true
+  ManabiTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources: [ManabiTests]
+    dependencies:
+      - target: Manabi
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+  ManabiUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [ManabiUITests]
+    dependencies:
+      - target: Manabi
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: Manabi

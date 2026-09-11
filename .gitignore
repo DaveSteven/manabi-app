@@ -1,0 +1,14 @@
+.DS_Store
+build/
+build-device/
+artifacts/*
+!artifacts/.gitkeep
+**/xcuserdata/
+*.xcuserstate
+
+.env.*
+!.env.example
+*.pem
+*.key
+*.dump
+.DS_Store
