@@ -11,6 +11,8 @@ final class AudioController {
     private var endObserver: NSObjectProtocol?
     private var segment: SubtitleSegment?
     private var seekVersion = 0
+    private var scrubVersion = 0
+    private var seeking = false
     private var wantsPlayback = false
     var completedLoops = 0
     var repeatSegment = true
@@ -42,10 +44,10 @@ final class AudioController {
             }
         }
         observer = player.addPeriodicTimeObserver(forInterval: CMTime(seconds: 0.25, preferredTimescale: 600), queue: .main) { [weak self] time in
-            let seconds = time.seconds
             Task { @MainActor [weak self] in
                 guard let self, self.loadedURL == url else { return }
-                self.current = seconds.isFinite ? seconds : 0
+                let seconds = self.player?.currentTime().seconds ?? 0
+                if !self.seeking { self.current = seconds.isFinite ? seconds : 0 }
                 let total = self.player?.currentItem?.duration.seconds ?? 0
                 self.duration = total.isFinite ? total : 0
                 self.isPlaying = (self.player?.rate ?? 0) > 0
@@ -70,8 +72,19 @@ final class AudioController {
 
     func seek(_ seconds: Double) {
         let value = max(0, min(seconds, duration > 0 ? duration : seconds))
-        player?.seek(to: CMTime(seconds: value, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
+        guard let player else { return }
+        scrubVersion += 1
+        let version = scrubVersion
+        seeking = true
         current = value
+        player.seek(to: CMTime(seconds: value, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self, self.scrubVersion == version else { return }
+                self.seeking = false
+                let seconds = self.player?.currentTime().seconds ?? value
+                self.current = seconds.isFinite ? seconds : value
+            }
+        }
     }
 
     func pause() { wantsPlayback = false; seekVersion += 1; player?.pause(); isPlaying = false }
@@ -100,6 +113,8 @@ final class AudioController {
 
     func stop() {
         pause()
+        scrubVersion += 1
+        seeking = false
         if let observer, let player { player.removeTimeObserver(observer) }
         observer = nil
         statusObserver = nil
@@ -122,8 +137,7 @@ final class AudioController {
 struct ListeningPlayer: View {
     let url: URL
     let controller: AudioController
-    @State private var scrub: Double = 0
-    @State private var scrubbing = false
+    @State private var resumeAfterScrubbing = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 15) {
@@ -140,10 +154,15 @@ struct ListeningPlayer: View {
                         .frame(width: 48, height: 48).background(Sakura.rose, in: Circle()).foregroundStyle(.white)
                 }.accessibilityLabel(controller.isPlaying ? "暂停音频" : "播放音频").accessibilityIdentifier("audioPlay")
                 VStack(spacing: 0) {
-                    Slider(value: Binding(get: { scrubbing ? scrub : min(controller.current, max(controller.duration, 1)) }, set: { scrub = $0 }), in: 0...max(controller.duration, 1), onEditingChanged: { editing in
-                        scrubbing = editing
-                        if !editing { controller.seek(scrub) }
-                    }).disabled(controller.duration <= 0).accessibilityLabel("音频进度")
+                    Slider(value: Binding(get: { min(max(controller.current, 0), max(controller.duration, 1)) }, set: { controller.seek($0) }), in: 0...max(controller.duration, 1), onEditingChanged: { editing in
+                        if editing {
+                            resumeAfterScrubbing = controller.isPlaying
+                            controller.pause()
+                        } else if resumeAfterScrubbing {
+                            resumeAfterScrubbing = false
+                            if !controller.isPlaying { controller.toggle() }
+                        }
+                    }).disabled(controller.duration <= 0).accessibilityLabel("音频进度").accessibilityIdentifier("audioProgress")
                     Text(time(controller.current)).font(.caption2.monospacedDigit()).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
                 }
             }

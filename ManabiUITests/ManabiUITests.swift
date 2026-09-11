@@ -72,6 +72,7 @@ final class ManabiUITests: XCTestCase {
         start(in: app)
         let material = app.descendants(matching: .any).matching(identifier: "readingMaterial").firstMatch
         XCTAssertTrue(material.waitForExistence(timeout: 20))
+        XCTAssertGreaterThan(material.frame.width, app.frame.width * 0.7)
         attach(app, name: "Manabi-reading")
         app.terminate()
         app.launch()
@@ -102,6 +103,74 @@ final class ManabiUITests: XCTestCase {
         attach(app, name: "Manabi-intensive-listening")
         app.buttons["closeIntensiveListening"].tap()
         XCTAssertTrue(app.buttons["audioPlay"].waitForExistence(timeout: 5))
+    }
+
+    func testExamPracticeProgressAndRewind() async throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["MANABI_UI_TESTING"] = "1"
+        app.launch()
+        // A fresh account makes progress assertions independent of previous test runs.
+        if app.buttons["category_vocabulary"].waitForExistence(timeout: 5) {
+            app.tabBars.buttons["我的"].tap()
+            let logout = app.buttons["退出登录"]
+            if !logout.isHittable { app.swipeUp() }
+            logout.tap()
+            app.alerts.buttons.matching(identifier: "confirmLogout").firstMatch.tap()
+            XCTAssertTrue(app.textFields["username"].waitForExistence(timeout: 15))
+        }
+        try await loginIfNeeded(app)
+        attach(app, name: "Manabi-home-compact")
+        app.buttons["examPracticeEntry"].tap()
+        app.buttons["examCategory_listening"].tap()
+        let exam = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'exam_' AND label CONTAINS '未开始'")).firstMatch
+        XCTAssertTrue(exam.waitForExistence(timeout: 20))
+        let examID = exam.identifier
+        exam.tap()
+        let type = app.buttons["examType_listening_task"]
+        XCTAssertTrue(type.waitForExistence(timeout: 20))
+        attach(app, name: "Manabi-exam-types")
+        type.tap()
+        let play = app.buttons["audioPlay"]
+        XCTAssertTrue(play.waitForExistence(timeout: 20))
+        XCTAssertTrue(play.isHittable)
+        XCTAssertGreaterThan(play.frame.minY, 40)
+        let slider = app.sliders["audioProgress"]
+        XCTAssertGreaterThan(slider.frame.width, 80)
+        play.tap()
+        await fulfillment(of: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: slider)], timeout: 30)
+        play.tap()
+        slider.adjust(toNormalizedSliderPosition: 0.6)
+        slider.adjust(toNormalizedSliderPosition: 0.1)
+        let startValue = slider.value as? String
+        play.tap()
+        await fulfillment(of: [XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            slider.value as? String != startValue
+        }, object: slider)], timeout: 20)
+        XCTAssertEqual(play.label, "暂停音频")
+        play.tap()
+        let option = app.buttons["option_0"]
+        for _ in 0..<5 { if option.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(option.isHittable)
+        XCTAssertGreaterThan(option.frame.width, app.frame.width * 0.7)
+        option.tap()
+        app.buttons["answerAction"].tap()
+        await fulfillment(of: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", "下一题"), object: app.buttons["answerAction"])], timeout: 20)
+        app.buttons["exitPractice"].tap()
+        app.alerts.buttons.matching(identifier: "confirmPracticeExit").firstMatch.tap()
+        await fulfillment(of: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "label CONTAINS '1 /' AND label CONTAINS '进行中'"), object: type)], timeout: 20)
+        attach(app, name: "Manabi-exam-saved-progress")
+        app.terminate()
+        app.launch()
+        XCTAssertTrue(app.buttons["examPracticeEntry"].waitForExistence(timeout: 30))
+        app.buttons["examPracticeEntry"].tap()
+        app.buttons["examCategory_listening"].tap()
+        XCTAssertTrue(app.buttons[examID].waitForExistence(timeout: 20))
+        app.buttons[examID].tap()
+        XCTAssertTrue(type.waitForExistence(timeout: 20))
+        XCTAssertTrue(type.label.contains("1 /"))
+        type.tap()
+        XCTAssertTrue(play.waitForExistence(timeout: 20))
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH '2 /'")).firstMatch.exists)
     }
 
     func testLoginRequiredAndLogout() async throws {
@@ -170,7 +239,14 @@ final class ManabiUITests: XCTestCase {
         XCTAssertTrue(element.waitForExistence(timeout: 30))
         expectation(for: NSPredicate(format: "enabled == true"), evaluatedWith: element)
         waitForExpectations(timeout: 30)
-        if !element.isHittable { app.swipeUp() }
+        // SwiftUI can report off-screen grid buttons as hittable on iOS 18.
+        // Bring the complete card above the tab bar before tapping it.
+        for _ in 0..<6 {
+            let bottom = app.tabBars.firstMatch.exists ? app.tabBars.firstMatch.frame.minY : app.frame.maxY
+            if element.isHittable && element.frame.minY > 100 && element.frame.maxY < bottom { break }
+            app.scrollViews.firstMatch.swipeUp()
+        }
+        XCTAssertTrue(element.isHittable)
         element.tap()
     }
 

@@ -85,7 +85,7 @@ struct PracticeFlow: View {
                     HStack {
                         Text("\(practice.level) · \(item.question.source.examTitle)").font(.caption.weight(.medium)).foregroundStyle(.secondary)
                         Spacer()
-                        Text("真题专项").font(.caption2.weight(.medium)).foregroundStyle(Sakura.rose)
+                        Text(practice.mode == "exam" ? "试卷练习" : "真题专项").font(.caption2.weight(.medium)).foregroundStyle(Sakura.rose)
                     }
 
                     if let url = model.mediaURL(item.question.material.audioUrl) {

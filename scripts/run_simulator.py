@@ -41,8 +41,11 @@ def main():
     prior = matching.get('userOverriddenBuild') or '--default'
     try:
         if changed:
-            print(f'Using installed iOS {runtime["version"]} for asset compilation; SDK matching will be restored.', flush=True)
-            run('xcrun', 'simctl', 'runtime', 'match', 'set', sdk, runtime['buildversion'])
+            # AssetCatalogSimulatorAgent comes from the current Xcode and needs a recent
+            # Swift runtime, even when the app under test runs on an older iOS device.
+            asset_runtime = runtimes[0]
+            print(f'Using installed iOS {asset_runtime["version"]} for asset compilation; SDK matching will be restored.', flush=True)
+            run('xcrun', 'simctl', 'runtime', 'match', 'set', sdk, asset_runtime['buildversion'])
         command = ['xcodebuild', '-project', 'Manabi.xcodeproj', '-scheme', 'Manabi',
                    '-destination', f'platform=iOS Simulator,id={device["udid"]}',
                    '-derivedDataPath', 'build', 'CODE_SIGN_IDENTITY=-', 'test' if args.test else 'build']

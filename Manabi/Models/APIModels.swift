@@ -214,3 +214,31 @@ struct IntensiveListening: Decodable, Sendable {
     let audioUrl: String
     let segments: [SubtitleSegment]
 }
+
+struct ExamProgress: Decodable, Identifiable, Sendable {
+    let id: String
+    let title: String
+    let level: String
+    let year: Int?
+    let month: Int?
+    let total: Int
+    let answered: Int
+    let correct: Int
+    let status: String
+    var dateTitle: String {
+        if let year, let month { return "\(year) 年 \(month) 月" }
+        return title
+    }
+}
+
+struct ExamTypeProgress: Decodable, Identifiable, Sendable {
+    let id: String
+    let nameZh: String
+    let nameJa: String
+    let category: String
+    let total: Int
+    let answered: Int
+    let correct: Int
+    let status: String
+    let practiceId: String?
+}

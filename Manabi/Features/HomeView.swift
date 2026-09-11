@@ -29,8 +29,8 @@ struct HomeView: View {
                     }
 
                     MetricRow {
-                        Metric(value: model.totalAvailable.formatted(), label: "道可练真题")
-                        Metric(value: model.answeredCount.formatted(), label: "次已完成作答")
+                        Metric(value: model.totalAvailable.formatted(), label: "可练题目")
+                        Metric(value: model.answeredCount.formatted(), label: "累计作答")
                         Metric(value: model.accuracy.map { "\($0)%" } ?? "—", label: "正确率")
                     }.studyCard()
 
@@ -57,6 +57,20 @@ struct HomeView: View {
                             }.padding(19).sakuraGlass()
                         }.buttonStyle(.plain).disabled(resuming).accessibilityIdentifier("continuePractice")
                     }
+
+                    NavigationLink {
+                        ExamCategoriesView(level: model.selectedLevel)
+                    } label: {
+                        HStack(spacing: 16) {
+                            Image(systemName: "calendar.badge.clock").font(.title2).foregroundStyle(Sakura.rose)
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("按试卷练习").font(.headline).foregroundStyle(Sakura.ink)
+                                Text("选择年月与题型，进度随时接续").font(.caption).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right").font(.caption).foregroundStyle(Sakura.rose)
+                        }.studyCard()
+                    }.buttonStyle(.plain).accessibilityIdentifier("examPracticeEntry")
 
                     VStack(alignment: .leading, spacing: 15) {
                         HStack {

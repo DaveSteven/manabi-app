@@ -13,11 +13,13 @@ struct RichText: View {
         Group {
             if content.html.contains("<table") || content.html.contains("<ruby") {
                 HTMLMaterial(content: content, size: scaledSize, dark: colorScheme == .dark, height: $webHeight)
+                    .frame(maxWidth: .infinity)
                     .frame(height: webHeight)
             } else {
                 NativeRichText(content: content, size: scaledSize, dark: colorScheme == .dark)
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityLabel(content.text)
     }
 
@@ -51,24 +53,31 @@ struct NativeRichText: UIViewRepresentable {
         let key = "\(size)-\(dark)-\(content.html)"
         guard context.coordinator.key != key else { return }
         context.coordinator.key = key
-        let markup = "<meta charset='utf-8'><style>body {font-family:-apple-system;font-size:\(size)px;color:\(color);} p,div {margin:0 0 8px;} </style>\(content.html)"
-        if let attributed = try? NSAttributedString(data: Data(markup.utf8), options: [.documentType: NSAttributedString.DocumentType.html, .characterEncoding: String.Encoding.utf8.rawValue], documentAttributes: nil) {
-            let mutable = NSMutableAttributedString(attributedString: attributed)
-            let paragraph = NSMutableParagraphStyle()
-            paragraph.lineSpacing = 7
-            mutable.addAttribute(.paragraphStyle, value: paragraph, range: NSRange(location: 0, length: mutable.length))
-            view.attributedText = mutable
-        } else {
-            view.text = content.text
-            view.font = .systemFont(ofSize: size)
-            view.textColor = dark ? .white : .label
+        // HTML import spins a nested run loop. Keep it outside SwiftUI's layout/update
+        // transaction so iOS 18 does not cache a partially laid-out practice page.
+        DispatchQueue.main.async { [weak view] in
+            guard let view, context.coordinator.key == key else { return }
+            let markup = "<meta charset='utf-8'><style>body {font-family:-apple-system;font-size:\(size)px;color:\(color);} p,div {margin:0 0 8px;} </style>\(content.html)"
+            if let attributed = try? NSAttributedString(data: Data(markup.utf8), options: [.documentType: NSAttributedString.DocumentType.html, .characterEncoding: String.Encoding.utf8.rawValue], documentAttributes: nil) {
+                let mutable = NSMutableAttributedString(attributedString: attributed)
+                let paragraph = NSMutableParagraphStyle()
+                paragraph.lineSpacing = 7
+                mutable.addAttribute(.paragraphStyle, value: paragraph, range: NSRange(location: 0, length: mutable.length))
+                view.attributedText = mutable
+            } else {
+                view.text = content.text
+                view.font = .systemFont(ofSize: size)
+                view.textColor = dark ? .white : .label
+            }
+            view.accessibilityLabel = content.text
+            view.invalidateIntrinsicContentSize()
         }
-        view.accessibilityLabel = content.text
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: UITextView, context: Context) -> CGSize? {
-        guard let width = proposal.width, width > 0 else { return nil }
-        return uiView.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude))
+        guard let width = proposal.width, width.isFinite, width > 0 else { return nil }
+        let measured = uiView.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude))
+        return CGSize(width: width, height: ceil(measured.height))
     }
 
     func makeCoordinator() -> Coordinator { Coordinator() }
@@ -104,10 +113,15 @@ struct HTMLMaterial: UIViewRepresentable {
         let html = """
         <html><head><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
         <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'">
-        <style>body{margin:0;font-family:-apple-system;font-size:\(size)px;line-height:1.85;color:\(dark ? "#F5EBED" : "#352C30");overflow-wrap:anywhere;}p,div{margin:0 0 10px}table{width:100%;border-collapse:collapse}td,th{border:1px solid #9996;padding:6px}rt{font-size:0.55em}</style></head>
+        <style>html{width:100%;}*{box-sizing:border-box;}body{width:100%;margin:0;font-family:-apple-system;font-size:\(size)px;line-height:1.85;color:\(dark ? "#F5EBED" : "#352C30");overflow-wrap:anywhere;}p,div{margin:0 0 10px}table{width:100%;table-layout:fixed;border-collapse:collapse}td,th{border:1px solid #9996;padding:6px}rt{font-size:0.55em}</style></head>
         <body>\(content.html)</body></html>
         """
         web.loadHTMLString(html, baseURL: nil)
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: WKWebView, context: Context) -> CGSize? {
+        guard let width = proposal.width, width.isFinite, width > 0 else { return nil }
+        return CGSize(width: width, height: height)
     }
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }

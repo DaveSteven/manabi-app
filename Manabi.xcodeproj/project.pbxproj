@@ -23,6 +23,7 @@
 		C84E93C8F4DED4B9806129E0 /* AudioPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = E82D18FAF8002996B19FF6B3 /* AudioPlayer.swift */; };
 		C8B124317DDEBF21602D032B /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 713FF4AC9E62D6B0B062D2E4 /* HomeView.swift */; };
 		D5C69B9ADC1F65CB21E03C6C /* QuestionImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA67AB0AC6291A91D05CFCF0 /* QuestionImage.swift */; };
+		93078C0FAD5F0AE617B15182 /* ExamPracticeViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B76509B649CBB55FBA0C5151 /* ExamPracticeViews.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -63,6 +64,7 @@
 		F4414BD05F5E97CFBF008878 /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
 		FB1C88FB0745D394389471C5 /* WrongQuestionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WrongQuestionsView.swift; sourceTree = "<group>"; };
 		FDCF664C97096472E7675D47 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		B76509B649CBB55FBA0C5151 /* ExamPracticeViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExamPracticeViews.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -117,6 +119,7 @@
 			isa = PBXGroup;
 			children = (
 				713FF4AC9E62D6B0B062D2E4 /* HomeView.swift */,
+				B76509B649CBB55FBA0C5151 /* ExamPracticeViews.swift */,
 				B4B5EB406247A09D9E427FA2 /* PracticeFlow.swift */,
 				B9103CFC61A0E987DCF33A32 /* ProfileView.swift */,
 				FB1C88FB0745D394389471C5 /* WrongQuestionsView.swift */,
@@ -304,6 +307,7 @@
 				255445A098859C1B8A4EDB41 /* AppModel.swift in Sources */,
 				C84E93C8F4DED4B9806129E0 /* AudioPlayer.swift in Sources */,
 				C8B124317DDEBF21602D032B /* HomeView.swift in Sources */,
+				93078C0FAD5F0AE617B15182 /* ExamPracticeViews.swift in Sources */,
 				4ED240908CB273FD70F4A19A /* ManabiApp.swift in Sources */,
 				5BD73AC2EE403D037B4970A5 /* PracticeFlow.swift in Sources */,
 				8914D6EEAE535314603D8C29 /* ProfileView.swift in Sources */,

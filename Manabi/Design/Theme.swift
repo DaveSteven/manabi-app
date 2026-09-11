@@ -97,16 +97,28 @@ struct InlineError: View {
     }
 }
 
+private struct InlineMetricKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+private extension EnvironmentValues {
+    var inlineMetric: Bool {
+        get { self[InlineMetricKey.self] }
+        set { self[InlineMetricKey.self] = newValue }
+    }
+}
+
 struct Metric: View {
     @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(\.inlineMetric) private var inline
     let value: String
     let label: String
     var body: some View {
-        let layout = typeSize.isAccessibilitySize ? AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: 16)) : AnyLayout(VStackLayout(alignment: .leading, spacing: 5))
+        let layout = (inline || typeSize.isAccessibilitySize) ? AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: 16)) : AnyLayout(VStackLayout(alignment: .leading, spacing: 5))
         layout {
             Text(value).font(.system(.title2, design: .rounded, weight: .semibold)).monospacedDigit().lineLimit(1).minimumScaleFactor(0.75)
-            if typeSize.isAccessibilitySize { Spacer() }
-            Text(label).font(.caption).foregroundStyle(.secondary)
+            if inline || typeSize.isAccessibilitySize { Spacer(minLength: 16) }
+            Text(label).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }.frame(maxWidth: .infinity, alignment: .leading).accessibilityElement(children: .combine)
     }
 }
@@ -115,7 +127,14 @@ struct MetricRow<Content: View>: View {
     @Environment(\.dynamicTypeSize) private var typeSize
     @ViewBuilder let content: () -> Content
     var body: some View {
-        let layout = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 20)) : AnyLayout(HStackLayout(spacing: 8))
-        layout { content() }
+        if typeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: 18) { content() }.environment(\.inlineMetric, true)
+        } else {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 20) { content().fixedSize(horizontal: true, vertical: false) }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                VStack(alignment: .leading, spacing: 16) { content() }.environment(\.inlineMetric, true)
+            }
+        }
     }
 }
