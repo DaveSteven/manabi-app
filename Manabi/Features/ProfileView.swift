@@ -128,7 +128,7 @@ struct ServerSettingsView: View {
         NavigationStack {
             Form {
                 Section("学习服务地址") {
-                    TextField("http://127.0.0.1:8001", text: $address).keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
+                    TextField("https://biblenotes.cc", text: $address).keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
                         .accessibilityIdentifier("serverAddress")
                 }
                 Section {

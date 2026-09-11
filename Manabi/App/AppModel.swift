@@ -23,11 +23,27 @@ final class AppModel {
         serverURL.absoluteString + (ProcessInfo.processInfo.environment["MANABI_UI_TESTING"] == "1" ? "|ui-tests" : "")
     }
 
+    private var serverPreferenceKey: String {
+        ProcessInfo.processInfo.environment["MANABI_UI_TESTING"] == "1" ? "manabi.test.server" : "manabi.server"
+    }
+
     init() {
-        let configured = UserDefaults.standard.string(forKey: "manabi.server") ?? "http://127.0.0.1:8001"
-        let initialURL = (try? APIClient.validatedURL(configured)) ?? URL(string: "http://127.0.0.1:8001")!
+        let testing = ProcessInfo.processInfo.environment["MANABI_UI_TESTING"] == "1"
+        let defaults = UserDefaults.standard
+        let preferenceKey = testing ? "manabi.test.server" : "manabi.server"
+        let defaultURL = URL(string: testing ? "http://127.0.0.1:8001" : "https://biblenotes.cc")!
+        var configured = defaults.string(forKey: preferenceKey).flatMap { try? APIClient.validatedURL($0) }
+        if !testing && !defaults.bool(forKey: "manabi.online-default-migrated") {
+            if let old = configured, old.scheme == "http", old.port == 8001,
+               ["127.0.0.1", "localhost"].contains(old.host ?? "") {
+                configured = defaultURL
+                defaults.set(defaultURL.absoluteString, forKey: preferenceKey)
+            }
+            defaults.set(true, forKey: "manabi.online-default-migrated")
+        }
+        let initialURL = configured ?? defaultURL
         serverURL = initialURL
-        let key = initialURL.absoluteString + (ProcessInfo.processInfo.environment["MANABI_UI_TESTING"] == "1" ? "|ui-tests" : "")
+        let key = initialURL.absoluteString + (testing ? "|ui-tests" : "")
         api = APIClient(baseURL: initialURL, token: TokenVault.read(server: key))
     }
 
@@ -167,7 +183,7 @@ final class AppModel {
         let url = try APIClient.validatedURL(address)
         guard url != serverURL else { await connect(); return }
         serverURL = url
-        UserDefaults.standard.set(url.absoluteString, forKey: "manabi.server")
+        UserDefaults.standard.set(url.absoluteString, forKey: serverPreferenceKey)
         api = APIClient(baseURL: url, token: TokenVault.read(server: vaultKey))
         user = nil
         levels = []
