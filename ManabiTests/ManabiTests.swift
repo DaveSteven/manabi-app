@@ -1,4 +1,5 @@
 import XCTest
+import AVFoundation
 @testable import Manabi
 
 final class ManabiTests: XCTestCase {
@@ -44,4 +45,43 @@ final class ManabiTests: XCTestCase {
         XCTAssertEqual(value["request_key"] as? String, "stable-retry-key")
         XCTAssertEqual(value["type_id"] as? String, "short_reading")
     }
+
+    @MainActor
+    func testSentencePlaybackLoopsAndStopsAtBoundary() async throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".caf")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let format = try XCTUnwrap(AVAudioFormat(standardFormatWithSampleRate: 8000, channels: 1))
+        let buffer = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 16000))
+        buffer.frameLength = 16000
+        buffer.floatChannelData![0].initialize(repeating: 0, count: 16000)
+        do {
+            let file = try AVAudioFile(forWriting: url, settings: format.settings)
+            try file.write(from: buffer)
+        }
+        let audio = AudioController()
+        defer { audio.stop() }
+        audio.load(url)
+        let sentence = SubtitleSegment(startMs: 100, endMs: 450, text: "test")
+        audio.playSegment(sentence)
+        for _ in 0..<80 {
+            if audio.completedLoops >= 2 { break }
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        XCTAssertGreaterThanOrEqual(audio.completedLoops, 2)
+        audio.pause()
+        let loops = audio.completedLoops
+        try await Task.sleep(for: .milliseconds(700))
+        XCTAssertEqual(audio.completedLoops, loops)
+        XCTAssertFalse(audio.isPlaying)
+        audio.repeatSegment = false
+        audio.playSegment(sentence)
+        for _ in 0..<50 {
+            if audio.completedLoops > loops && !audio.isPlaying { break }
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        XCTAssertEqual(audio.completedLoops, loops + 1)
+        XCTAssertFalse(audio.isPlaying)
+        XCTAssertLessThanOrEqual(audio.current, 0.5)
+    }
+
 }

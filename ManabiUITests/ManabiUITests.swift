@@ -84,6 +84,24 @@ final class ManabiUITests: XCTestCase {
         await fulfillment(of: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", "暂停音频"), object: play)], timeout: 20)
         attach(app, name: "Manabi-listening")
         play.tap()
+        app.buttons["openIntensiveListening"].tap()
+        XCTAssertTrue(app.buttons["toggleTranscript"].waitForExistence(timeout: 15))
+        XCTAssertEqual(app.buttons["toggleTranscript"].label, "显示原文")
+        XCTAssertFalse(app.buttons["previousSentence"].isEnabled)
+        app.buttons["playSentence"].tap()
+        await fulfillment(of: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", "暂停当前句"), object: app.buttons["playSentence"])], timeout: 15)
+        app.buttons["toggleTranscript"].tap()
+        XCTAssertEqual(app.buttons["toggleTranscript"].label, "隐藏原文")
+        if app.buttons["nextSentence"].isEnabled {
+            app.buttons["nextSentence"].tap()
+            XCTAssertEqual(app.buttons["toggleTranscript"].label, "显示原文")
+            XCTAssertTrue(app.buttons["previousSentence"].isEnabled)
+            app.buttons["previousSentence"].tap()
+            XCTAssertFalse(app.buttons["previousSentence"].isEnabled)
+        }
+        attach(app, name: "Manabi-intensive-listening")
+        app.buttons["closeIntensiveListening"].tap()
+        XCTAssertTrue(app.buttons["audioPlay"].waitForExistence(timeout: 5))
     }
 
     func testLoginRequiredAndLogout() async throws {

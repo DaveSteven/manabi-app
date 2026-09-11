@@ -12,6 +12,7 @@ struct PracticeFlow: View {
     @State private var showingResult = false
     @State private var confirmingExit = false
     @State private var showMaterial = false
+    @State private var intensiveItem: PracticeItem?
     @State private var audio = AudioController()
     @State private var foregroundStart = Date()
     @State private var elapsed: TimeInterval = 0
@@ -56,6 +57,9 @@ struct PracticeFlow: View {
             } message: { Text("已提交的答案会保留，下次可以接着练习。尚未提交的选择不会保存。") }
             .interactiveDismissDisabled(submitting)
         }
+        .sheet(item: $intensiveItem) { item in
+            IntensiveListeningView(practiceId: practice.id, itemId: item.id).environment(model)
+        }
         .onDisappear { audio.stop() }
         .onChange(of: index) { _, _ in
             selected = nil
@@ -86,6 +90,13 @@ struct PracticeFlow: View {
 
                     if let url = model.mediaURL(item.question.material.audioUrl) {
                         ListeningPlayer(url: url, controller: audio)
+                        Button {
+                            audio.pause()
+                            intensiveItem = item
+                        } label: {
+                            Label("进入精听 · 逐句练习", systemImage: "ear.badge.waveform")
+                                .font(.subheadline.weight(.semibold)).frame(maxWidth: .infinity).padding(.vertical, 10)
+                        }.accessibilityIdentifier("openIntensiveListening")
                     }
                     if !item.question.material.content.isEmpty {
                         DisclosureGroup(isExpanded: $showMaterial) {

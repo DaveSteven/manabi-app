@@ -209,3 +209,8 @@ struct Credentials: Encodable, Sendable {
 
 struct LevelBody: Encodable, Sendable { let level: String }
 struct EmptyBody: Codable, Sendable {}
+
+struct IntensiveListening: Decodable, Sendable {
+    let audioUrl: String
+    let segments: [SubtitleSegment]
+}
