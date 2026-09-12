@@ -8,7 +8,7 @@ struct HomeView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 25) {
+                VStack(alignment: .leading, spacing: 20) {
                     HStack(alignment: .top) {
                         VStack(alignment: .leading, spacing: 12) {
                             Text("毎日の学び").font(.caption.weight(.medium)).tracking(3).foregroundStyle(Sakura.rose)
@@ -59,7 +59,7 @@ struct HomeView: View {
                     }
 
                     NavigationLink {
-                        ExamCategoriesView(level: model.selectedLevel)
+                        ExamPracticeView(level: model.selectedLevel)
                     } label: {
                         HStack(spacing: 16) {
                             Image(systemName: "calendar.badge.clock").font(.title2).foregroundStyle(Sakura.rose)

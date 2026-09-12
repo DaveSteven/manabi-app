@@ -201,7 +201,7 @@ struct IntensiveListeningView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 24) {
+                VStack(alignment: .leading, spacing: 18) {
                     Text("先听见，再看见。").font(.largeTitle.bold())
                     Text("听清这一句，再由你决定什么时候继续。").font(.subheadline).foregroundStyle(.secondary)
                     if loading { ProgressView("正在准备逐句音频…").frame(maxWidth: .infinity) }
@@ -212,7 +212,7 @@ struct IntensiveListeningView: View {
                         VStack(alignment: .leading, spacing: 22) {
                             HStack { Label("日文原文", systemImage: "text.alignleft"); Spacer(); Image(systemName: revealed ? "eye" : "eye.slash") }
                                 .font(.caption).foregroundStyle(.secondary)
-                            Text(segment.text).font(.title2).lineSpacing(10)
+                            Text(segment.text).font(.title2).lineSpacing(6)
                                 .blur(radius: revealed ? 0 : 9)
                                 .accessibilityHidden(!revealed)
                                 .textSelection(.disabled)

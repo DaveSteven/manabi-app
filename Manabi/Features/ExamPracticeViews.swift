@@ -1,30 +1,95 @@
 import SwiftUI
 
-struct ExamCategoriesView: View {
+struct ExamPracticeView: View {
     let level: String
+    @Environment(AppModel.self) private var model
+    @State private var category: StudyCategory = .listening
+    @State private var selectedExamID = ""
+    @State private var exams: [ExamProgress] = []
+    @State private var loadedCategory: StudyCategory?
+    @State private var loading = true
+    @State private var error: String?
+    @State private var requestID = UUID()
+
+    private var selectedExam: ExamProgress? { exams.first { $0.id == selectedExamID } }
+
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                Text("从一份真题开始").font(.largeTitle.bold())
-                Text("\(level) · 先选专项，再选试卷年月。每个题型的进度都会为你保留。")
-                    .font(.subheadline).foregroundStyle(.secondary)
-                ForEach(StudyCategory.allCases) { category in
-                    NavigationLink {
-                        ExamListView(level: level, category: category)
-                    } label: {
-                        HStack(spacing: 16) {
-                            Image(systemName: category.symbol).font(.title2).foregroundStyle(Sakura.rose).frame(width: 42)
-                            VStack(alignment: .leading, spacing: 6) {
-                                Text(category.title).font(.headline).foregroundStyle(Sakura.ink)
-                                Text(category.caption).font(.caption).foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("\(level) · 选择试卷与专项").font(.headline)
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(StudyCategory.allCases) { choice in
+                                Button { category = choice } label: {
+                                    Text(choice == .vocabulary ? "词汇" : choice.title)
+                                        .font(.subheadline.weight(.medium))
+                                        .padding(.horizontal, 16).frame(minHeight: 44)
+                                        .foregroundStyle(category == choice ? .white : Sakura.ink)
+                                        .background(category == choice ? Sakura.rose : Sakura.blossom.opacity(0.12), in: Capsule())
+                                }.buttonStyle(.plain)
+                                    .accessibilityIdentifier("examCategory_\(choice.rawValue)")
+                                    .accessibilityAddTraits(category == choice ? .isSelected : [])
                             }
-                            Spacer()
-                            Image(systemName: "chevron.right").font(.caption).foregroundStyle(Sakura.rose)
-                        }.studyCard()
-                    }.buttonStyle(.plain).accessibilityIdentifier("examCategory_\(category.rawValue)")
+                        }
+                    }
+                    if loadedCategory == category && !exams.isEmpty {
+                        HStack {
+                            Label("试卷年月", systemImage: "calendar").font(.subheadline)
+                            Spacer(minLength: 8)
+                            Menu {
+                                ForEach(exams) { exam in
+                                    Button { selectedExamID = exam.id } label: {
+                                        if exam.id == selectedExamID { Label(exam.dateTitle, systemImage: "checkmark") }
+                                        else { Text(exam.dateTitle) }
+                                    }.accessibilityIdentifier("exam_\(exam.id)")
+                                }
+                            } label: {
+                                HStack(spacing: 6) {
+                                    Text(selectedExam?.dateTitle ?? "选择年月")
+                                    Image(systemName: "chevron.up.chevron.down").font(.caption2)
+                                }.font(.subheadline.weight(.medium)).frame(minHeight: 44)
+                            }.accessibilityIdentifier("examDatePicker")
+                        }
+                    }
+                }.studyCard(padding: 16)
+                if let error { InlineError(message: error) { Task { await load() } } }
+                if loading || loadedCategory != category {
+                    ProgressView("正在加载试卷…").frame(maxWidth: .infinity)
+                } else if let exam = selectedExam {
+                    ExamTypesView(exam: exam, category: category)
+                        .id("\(exam.id)-\(category.rawValue)")
+                } else if error == nil {
+                    ContentUnavailableView("暂无可练试卷", systemImage: "calendar", description: Text("这个等级的专项题目还在整理中。"))
                 }
-            }.padding(22).frame(maxWidth: 720).frame(maxWidth: .infinity)
+            }.padding(20).frame(maxWidth: 720).frame(maxWidth: .infinity)
         }.background(SakuraBackground()).navigationTitle("按试卷练习").navigationBarTitleDisplayMode(.inline)
+            .task(id: category) { await load() }
+            .refreshable { await load() }
+    }
+
+    private func load() async {
+        let request = UUID()
+        requestID = request
+        loading = true
+        error = nil
+        let requestedCategory = category
+        let api = model.api
+        let userID = model.user?.id
+        defer { if requestID == request { loading = false } }
+        do {
+            let page: ItemList<ExamProgress> = try await api.get("exam-practice/exams", query: [.init(name: "level", value: level), .init(name: "category", value: requestedCategory.rawValue)])
+            guard !Task.isCancelled, requestID == request, category == requestedCategory,
+                  api === model.api, userID == model.user?.id else { return }
+            exams = page.items
+            loadedCategory = requestedCategory
+            if !exams.contains(where: { $0.id == selectedExamID }) { selectedExamID = exams.first?.id ?? "" }
+        } catch {
+            guard !Task.isCancelled, requestID == request, category == requestedCategory else { return }
+            exams = []
+            loadedCategory = requestedCategory
+            self.error = AppModel.describe(error)
+        }
     }
 }
 
@@ -45,63 +110,7 @@ private struct ExamProgressLabel: View {
     }
 }
 
-struct ExamListView: View {
-    let level: String
-    let category: StudyCategory
-    @Environment(AppModel.self) private var model
-    @State private var exams: [ExamProgress] = []
-    @State private var loading = true
-    @State private var error: String?
-
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                Text("选择试卷年月").font(.title.bold())
-                Text("\(level) · \(category.title)").font(.subheadline).foregroundStyle(.secondary)
-                if let error { InlineError(message: error) { Task { await load() } } }
-                if loading && exams.isEmpty { ProgressView().frame(maxWidth: .infinity) }
-                if !loading && exams.isEmpty && error == nil {
-                    ContentUnavailableView("暂无可练试卷", systemImage: "calendar", description: Text("这个等级的专项题目还在整理中。"))
-                }
-                ForEach(exams) { exam in
-                    NavigationLink {
-                        ExamTypesView(exam: exam, category: category)
-                    } label: {
-                        VStack(alignment: .leading, spacing: 17) {
-                            HStack {
-                                VStack(alignment: .leading, spacing: 6) {
-                                    Text(exam.dateTitle).font(.title3.bold()).foregroundStyle(Sakura.ink)
-                                    Text("\(exam.level) · \(category.title)").font(.caption).foregroundStyle(.secondary)
-                                }
-                                Spacer()
-                                Image(systemName: "chevron.right").foregroundStyle(Sakura.rose)
-                            }
-                            ExamProgressLabel(status: exam.status, answered: exam.answered, total: exam.total)
-                        }.studyCard()
-                    }.buttonStyle(.plain).accessibilityIdentifier("exam_\(exam.id)")
-                }
-            }.padding(22).frame(maxWidth: 720).frame(maxWidth: .infinity)
-        }.background(SakuraBackground()).navigationTitle(category.title).navigationBarTitleDisplayMode(.inline)
-            .task { await load() }
-            .refreshable { await load() }
-            .onChange(of: model.presentedPractice?.id) { _, id in if id == nil { Task { await load() } } }
-    }
-
-    private func load() async {
-        loading = true
-        defer { loading = false }
-        let api = model.api
-        let userId = model.user?.id
-        do {
-            let page: ItemList<ExamProgress> = try await api.get("exam-practice/exams", query: [.init(name: "level", value: level), .init(name: "category", value: category.rawValue)])
-            guard api === model.api, userId == model.user?.id else { return }
-            exams = page.items
-            error = nil
-        } catch { self.error = AppModel.describe(error) }
-    }
-}
-
-struct ExamTypesView: View {
+private struct ExamTypesView: View {
     let exam: ExamProgress
     let category: StudyCategory
     @Environment(AppModel.self) private var model
@@ -111,43 +120,37 @@ struct ExamTypesView: View {
     @State private var error: String?
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                Text(exam.dateTitle).font(.largeTitle.bold())
-                Text("\(exam.level) · \(category.title)").font(.subheadline).foregroundStyle(.secondary)
-                Text("选择题型，按这份试卷的顺序练习。未完成的题型可以随时接着练。")
-                    .font(.subheadline).foregroundStyle(.secondary)
-                if let error { InlineError(message: error) { Task { await load() } } }
-                if loading && types.isEmpty { ProgressView().frame(maxWidth: .infinity) }
-                if !loading && types.isEmpty && error == nil {
-                    ContentUnavailableView("暂无可练题型", systemImage: "book.closed")
-                }
-                ForEach(types) { type in
-                    Button { Task { await open(type) } } label: {
-                        VStack(alignment: .leading, spacing: 16) {
-                            HStack(alignment: .top) {
-                                VStack(alignment: .leading, spacing: 6) {
-                                    Text(type.nameZh).font(.headline).foregroundStyle(Sakura.ink)
-                                    Text(type.nameJa).font(.caption).foregroundStyle(.secondary)
-                                }
-                                Spacer()
-                                if opening == type.id { ProgressView() }
-                                else {
-                                    Text(type.status == "completed" ? "回顾" : type.practiceId == nil ? "开始" : "继续")
-                                        .font(.subheadline.weight(.semibold)).foregroundStyle(Sakura.rose)
-                                }
+        VStack(alignment: .leading, spacing: 12) {
+            Text("选择题型").font(.headline)
+            if let error { InlineError(message: error) { Task { await load() } } }
+            if loading && types.isEmpty { ProgressView().frame(maxWidth: .infinity) }
+            if !loading && types.isEmpty && error == nil {
+                ContentUnavailableView("暂无可练题型", systemImage: "book.closed")
+            }
+            ForEach(types) { type in
+                Button { Task { await open(type) } } label: {
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack(alignment: .top) {
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text(type.nameZh).font(.headline).foregroundStyle(Sakura.ink)
+                                Text(type.nameJa).font(.caption).foregroundStyle(.secondary)
                             }
-                            ExamProgressLabel(status: type.status, answered: type.answered, total: type.total)
-                            if type.answered > 0 {
-                                Text("答对 \(type.correct) 题").font(.caption).foregroundStyle(.secondary)
+                            Spacer()
+                            if opening == type.id { ProgressView() }
+                            else {
+                                Text(type.status == "completed" ? "回顾" : type.practiceId == nil ? "开始" : "继续")
+                                    .font(.subheadline.weight(.semibold)).foregroundStyle(Sakura.rose)
                             }
-                        }.studyCard()
-                    }.buttonStyle(.plain).disabled(opening != nil).accessibilityIdentifier("examType_\(type.id)")
-                }
-            }.padding(22).frame(maxWidth: 720).frame(maxWidth: .infinity)
-        }.background(SakuraBackground()).navigationTitle("选择题型").navigationBarTitleDisplayMode(.inline)
+                        }
+                        ExamProgressLabel(status: type.status, answered: type.answered, total: type.total)
+                        if type.answered > 0 {
+                            Text("答对 \(type.correct) 题").font(.caption).foregroundStyle(.secondary)
+                        }
+                    }.studyCard()
+                }.buttonStyle(.plain).disabled(opening != nil).accessibilityIdentifier("examType_\(type.id)")
+            }
+        }
             .task { await load() }
-            .refreshable { await load() }
             .onChange(of: model.presentedPractice?.id) { _, id in if id == nil { Task { await load() } } }
     }
 

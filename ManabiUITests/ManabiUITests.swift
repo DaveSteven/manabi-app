@@ -121,9 +121,14 @@ final class ManabiUITests: XCTestCase {
         try await loginIfNeeded(app)
         attach(app, name: "Manabi-home-compact")
         app.buttons["examPracticeEntry"].tap()
+        XCTAssertTrue(app.buttons["examDatePicker"].waitForExistence(timeout: 20))
+        app.buttons["examCategory_vocabulary"].tap()
+        XCTAssertTrue(app.buttons["examType_kanji_reading"].waitForExistence(timeout: 20))
         app.buttons["examCategory_listening"].tap()
-        let exam = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'exam_' AND label CONTAINS '未开始'")).firstMatch
-        XCTAssertTrue(exam.waitForExistence(timeout: 20))
+        XCTAssertTrue(app.buttons["examType_listening_task"].waitForExistence(timeout: 20))
+        app.buttons["examDatePicker"].tap()
+        let exam = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'exam_' ")).element(boundBy: 1)
+        XCTAssertTrue(exam.waitForExistence(timeout: 10))
         let examID = exam.identifier
         exam.tap()
         let type = app.buttons["examType_listening_task"]
@@ -163,8 +168,9 @@ final class ManabiUITests: XCTestCase {
         app.launch()
         XCTAssertTrue(app.buttons["examPracticeEntry"].waitForExistence(timeout: 30))
         app.buttons["examPracticeEntry"].tap()
-        app.buttons["examCategory_listening"].tap()
-        XCTAssertTrue(app.buttons[examID].waitForExistence(timeout: 20))
+        XCTAssertTrue(app.buttons["examDatePicker"].waitForExistence(timeout: 20))
+        app.buttons["examDatePicker"].tap()
+        XCTAssertTrue(app.buttons[examID].waitForExistence(timeout: 10))
         app.buttons[examID].tap()
         XCTAssertTrue(type.waitForExistence(timeout: 20))
         XCTAssertTrue(type.label.contains("1 /"))

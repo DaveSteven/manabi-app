@@ -61,7 +61,7 @@ struct NativeRichText: UIViewRepresentable {
             if let attributed = try? NSAttributedString(data: Data(markup.utf8), options: [.documentType: NSAttributedString.DocumentType.html, .characterEncoding: String.Encoding.utf8.rawValue], documentAttributes: nil) {
                 let mutable = NSMutableAttributedString(attributedString: attributed)
                 let paragraph = NSMutableParagraphStyle()
-                paragraph.lineSpacing = 7
+                paragraph.lineSpacing = 4
                 mutable.addAttribute(.paragraphStyle, value: paragraph, range: NSRange(location: 0, length: mutable.length))
                 view.attributedText = mutable
             } else {
@@ -113,7 +113,7 @@ struct HTMLMaterial: UIViewRepresentable {
         let html = """
         <html><head><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
         <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'">
-        <style>html{width:100%;}*{box-sizing:border-box;}body{width:100%;margin:0;font-family:-apple-system;font-size:\(size)px;line-height:1.85;color:\(dark ? "#F5EBED" : "#352C30");overflow-wrap:anywhere;}p,div{margin:0 0 10px}table{width:100%;table-layout:fixed;border-collapse:collapse}td,th{border:1px solid #9996;padding:6px}rt{font-size:0.55em}</style></head>
+        <style>html{width:100%;}*{box-sizing:border-box;}body{width:100%;margin:0;font-family:-apple-system;font-size:\(size)px;line-height:1.6;color:\(dark ? "#F5EBED" : "#352C30");overflow-wrap:anywhere;}p,div{margin:0 0 7px}table{width:100%;table-layout:fixed;border-collapse:collapse}td,th{border:1px solid #9996;padding:6px}rt{font-size:0.55em}</style></head>
         <body>\(content.html)</body></html>
         """
         web.loadHTMLString(html, baseURL: nil)

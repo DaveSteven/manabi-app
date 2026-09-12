@@ -79,7 +79,7 @@ struct PracticeFlow: View {
     private func questionView(_ item: PracticeItem) -> some View {
         ScrollViewReader { proxy in
             ScrollView {
-                VStack(alignment: .leading, spacing: 21) {
+                VStack(alignment: .leading, spacing: 16) {
                     Color.clear.frame(height: 0).id("top")
                     ProgressView(value: Double(index + 1), total: Double(max(practice.total, 1))).tint(Sakura.rose)
                     HStack {
@@ -193,7 +193,7 @@ struct PracticeFlow: View {
     }
 
     private func feedbackView(_ feedback: Feedback, item: PracticeItem) -> some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: 14) {
             Label(feedback.isCorrect ? "答对了，继续保持" : "没关系，再理解一次", systemImage: feedback.isCorrect ? "checkmark.circle.fill" : "lightbulb")
                 .font(.headline).foregroundStyle(feedback.isCorrect ? Sakura.success : Sakura.rose)
             let number = item.question.options.first { $0.id == feedback.correctOptionId }.map { $0.position + 1 } ?? 0
@@ -212,7 +212,7 @@ struct PracticeFlow: View {
                             Button { audio.replay(segment) } label: {
                                 HStack(alignment: .top, spacing: 10) {
                                     Image(systemName: "play.circle").foregroundStyle(Sakura.rose)
-                                    Text(segment.text).font(.body).lineSpacing(5).foregroundStyle(Sakura.ink)
+                                    Text(segment.text).font(.body).lineSpacing(3).foregroundStyle(Sakura.ink)
                                 }
                             }.buttonStyle(.plain)
                         }
