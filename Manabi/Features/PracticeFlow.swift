@@ -18,7 +18,10 @@ struct PracticeFlow: View {
     @State private var elapsed: TimeInterval = 0
     @State private var pendingElapsed: Int?
 
-    init(practice: Practice) {
+    let returnsToExamDirectory: Bool
+
+    init(practice: Practice, returnsToExamDirectory: Bool = false) {
+        self.returnsToExamDirectory = returnsToExamDirectory
         _practice = State(initialValue: practice)
         _index = State(initialValue: practice.items.firstIndex { $0.id == practice.nextItemId } ?? 0)
         _showingResult = State(initialValue: practice.status == "completed")
@@ -237,7 +240,7 @@ struct PracticeFlow: View {
                     Text("错题已为你收好，随时可以再练一次。").font(.subheadline).foregroundStyle(.secondary)
                 }
                 PrimaryButton("回顾本组题目", symbol: "book") { index = 0; showingResult = false }
-                Button("完成，回到练习") { dismiss() }.font(.body.weight(.semibold)).padding(.vertical, 6).accessibilityIdentifier("finishPractice")
+                Button(returnsToExamDirectory ? "返回试卷目录" : "完成，回到练习") { dismiss() }.font(.body.weight(.semibold)).padding(.vertical, 6).accessibilityIdentifier("finishPractice")
             }.padding(24).frame(maxWidth: 600).frame(maxWidth: .infinity)
         }
     }

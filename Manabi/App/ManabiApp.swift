@@ -33,9 +33,10 @@ struct RootView: View {
         .foregroundStyle(Sakura.ink)
         .task { await model.bootstrap() }
         .fullScreenCover(item: $model.presentedPractice, onDismiss: {
+            model.practiceReturnsToExamDirectory = false
             Task { await model.refresh() }
         }) { practice in
-            PracticeFlow(practice: practice).environment(model)
+            PracticeFlow(practice: practice, returnsToExamDirectory: model.practiceReturnsToExamDirectory).environment(model)
         }
         .sheet(isPresented: $model.showSettings) { ServerSettingsView().environment(model) }
     }

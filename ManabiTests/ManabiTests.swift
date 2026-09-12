@@ -3,6 +3,21 @@ import AVFoundation
 @testable import Manabi
 
 final class ManabiTests: XCTestCase {
+    func testWholePaperProgressMergesCategoriesAndKeepsPartialPapers() {
+        let rows = [
+            ExamProgress(id: "a", title: "A", level: "N3", year: 2025, month: 7, total: 2, answered: 2, correct: 1, status: "completed"),
+            ExamProgress(id: "a", title: "A", level: "N3", year: 2025, month: 7, total: 5, answered: 0, correct: 0, status: "not_started"),
+            ExamProgress(id: "b", title: "B", level: "N3", year: 2024, month: 12, total: 3, answered: 3, correct: 2, status: "completed")
+        ]
+        let result = ExamProgress.combined(rows)
+        XCTAssertEqual(result.map(\.id), ["a", "b"])
+        XCTAssertEqual(result[0].total, 7)
+        XCTAssertEqual(result[0].answered, 2)
+        XCTAssertEqual(result[0].status, "active")
+        XCTAssertEqual(result[1].status, "completed")
+        XCTAssertTrue(ExamProgress.combined([]).isEmpty)
+    }
+
     func testServerAddressValidation() throws {
         XCTAssertEqual(try APIClient.validatedURL(" http://127.0.0.1:8001/ ").absoluteString, "http://127.0.0.1:8001")
         for invalid in ["file:///tmp/data", "https://user:pass@example.com", "http://localhost/api/v1", "http://localhost?token=secret", "not-a-url"] {

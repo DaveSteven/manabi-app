@@ -16,6 +16,7 @@ final class AppModel {
     var message: String?
     var needsAccount = false
     var presentedPractice: Practice?
+    var practiceReturnsToExamDirectory = false
     var showSettings = false
     private var started = false
     private var catalog: [String: [QuestionType]] = [:]

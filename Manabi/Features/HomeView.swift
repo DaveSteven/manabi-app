@@ -65,7 +65,7 @@ struct HomeView: View {
                             Image(systemName: "calendar.badge.clock").font(.title2).foregroundStyle(Sakura.rose)
                             VStack(alignment: .leading, spacing: 6) {
                                 Text("按试卷练习").font(.headline).foregroundStyle(Sakura.ink)
-                                Text("选择年月与题型，进度随时接续").font(.caption).foregroundStyle(.secondary)
+                                Text("按年份选真题，自由练习各模块").font(.caption).foregroundStyle(.secondary)
                             }
                             Spacer()
                             Image(systemName: "chevron.right").font(.caption).foregroundStyle(Sakura.rose)

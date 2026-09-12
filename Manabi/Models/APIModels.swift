@@ -242,3 +242,21 @@ struct ExamTypeProgress: Decodable, Identifiable, Sendable {
     let status: String
     let practiceId: String?
 }
+
+
+extension ExamProgress {
+    /// Merge disjoint category progress without dropping papers missing one category.
+    static func combined(_ rows: [ExamProgress]) -> [ExamProgress] {
+        Dictionary(grouping: rows, by: \.id).values.compactMap { parts -> ExamProgress? in
+            guard let first = parts.first else { return nil }
+            return ExamProgress(id: first.id, title: first.title, level: first.level, year: first.year, month: first.month,
+                                total: parts.reduce(0) { $0 + $1.total }, answered: parts.reduce(0) { $0 + $1.answered },
+                                correct: parts.reduce(0) { $0 + $1.correct },
+                                status: parts.allSatisfy { $0.status == "completed" } ? "completed" : parts.allSatisfy { $0.status == "not_started" } ? "not_started" : "active")
+        }.sorted {
+            if $0.year != $1.year { return ($0.year ?? 0) > ($1.year ?? 0) }
+            if $0.month != $1.month { return ($0.month ?? 0) > ($1.month ?? 0) }
+            return $0.id < $1.id
+        }
+    }
+}

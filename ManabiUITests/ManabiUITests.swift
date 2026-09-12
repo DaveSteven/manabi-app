@@ -121,16 +121,14 @@ final class ManabiUITests: XCTestCase {
         try await loginIfNeeded(app)
         attach(app, name: "Manabi-home-compact")
         app.buttons["examPracticeEntry"].tap()
-        XCTAssertTrue(app.buttons["examDatePicker"].waitForExistence(timeout: 20))
-        app.buttons["examCategory_vocabulary"].tap()
-        XCTAssertTrue(app.buttons["examType_kanji_reading"].waitForExistence(timeout: 20))
-        app.buttons["examCategory_listening"].tap()
-        XCTAssertTrue(app.buttons["examType_listening_task"].waitForExistence(timeout: 20))
-        app.buttons["examDatePicker"].tap()
-        let exam = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'exam_' ")).element(boundBy: 1)
-        XCTAssertTrue(exam.waitForExistence(timeout: 10))
+        let exam = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'exam_' ")).firstMatch
+        XCTAssertTrue(exam.waitForExistence(timeout: 20))
         let examID = exam.identifier
         exam.tap()
+        XCTAssertTrue(app.buttons["examType_kanji_reading"].waitForExistence(timeout: 20))
+        XCTAssertFalse(app.buttons["audioPlay"].exists)
+        attach(app, name: "Manabi-exam-directory")
+        app.buttons["examJump_listening"].tap()
         let type = app.buttons["examType_listening_task"]
         XCTAssertTrue(type.waitForExistence(timeout: 20))
         attach(app, name: "Manabi-exam-types")
@@ -168,15 +166,40 @@ final class ManabiUITests: XCTestCase {
         app.launch()
         XCTAssertTrue(app.buttons["examPracticeEntry"].waitForExistence(timeout: 30))
         app.buttons["examPracticeEntry"].tap()
-        XCTAssertTrue(app.buttons["examDatePicker"].waitForExistence(timeout: 20))
-        app.buttons["examDatePicker"].tap()
-        XCTAssertTrue(app.buttons[examID].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons[examID].waitForExistence(timeout: 20))
         app.buttons[examID].tap()
-        XCTAssertTrue(type.waitForExistence(timeout: 20))
-        XCTAssertTrue(type.label.contains("1 /"))
-        type.tap()
+        XCTAssertTrue(app.buttons["continueExamModule"].waitForExistence(timeout: 20))
+        app.buttons["continueExamModule"].tap()
         XCTAssertTrue(play.waitForExistence(timeout: 20))
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH '2 /'")).firstMatch.exists)
+        app.buttons["exitPractice"].tap()
+        app.alerts.buttons.matching(identifier: "confirmPracticeExit").firstMatch.tap()
+        XCTAssertTrue(app.buttons["examJump_vocabulary"].waitForExistence(timeout: 10))
+        app.buttons["examJump_vocabulary"].tap()
+        let completedType = app.buttons["examType_kanji_reading"]
+        completedType.tap()
+        let position = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH '1 /'")).firstMatch
+        XCTAssertTrue(position.waitForExistence(timeout: 20))
+        let total = try XCTUnwrap(Int(position.label.split(separator: "/").last!.trimmingCharacters(in: .whitespaces)))
+        for number in 1...total {
+            let choice = app.buttons["option_0"]
+            for _ in 0..<6 {
+                if choice.isHittable && choice.frame.midY > 100 && choice.frame.midY < app.buttons["answerAction"].frame.minY { break }
+                app.swipeUp()
+            }
+            choice.tap()
+            await fulfillment(of: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: app.buttons["answerAction"])], timeout: 10)
+            app.buttons["answerAction"].tap()
+            let expected = number == total ? "查看练习结果" : "下一题"
+            await fulfillment(of: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", expected), object: app.buttons["answerAction"])], timeout: 20)
+            app.buttons["answerAction"].tap()
+        }
+        XCTAssertTrue(app.buttons["finishPractice"].waitForExistence(timeout: 10))
+        XCTAssertEqual(app.buttons["finishPractice"].label, "返回试卷目录")
+        app.buttons["finishPractice"].tap()
+        await fulfillment(of: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "label CONTAINS '已完成'"), object: completedType)], timeout: 20)
+        XCTAssertFalse(app.buttons["audioPlay"].exists)
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'examType_' AND label CONTAINS '未开始'")).firstMatch.exists)
     }
 
     func testLoginRequiredAndLogout() async throws {
