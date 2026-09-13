@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		CA0123456789012345678901 /* ResourceCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA0123456789012345678902 /* ResourceCache.swift */; };
 		1C28723910F5905D392B9BA5 /* APIModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3468D144C3599672B78D518 /* APIModels.swift */; };
 		255445A098859C1B8A4EDB41 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42FDC4A77E2679E83DE98A09 /* AppModel.swift */; };
 		4ED240908CB273FD70F4A19A /* ManabiApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF5FA21EF8342DFE2EDA08FC /* ManabiApp.swift */; };
@@ -44,6 +45,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		CA0123456789012345678902 /* ResourceCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResourceCache.swift; sourceTree = "<group>"; };
 		181D5E1ECCFEC814C38CA1CA /* ManabiTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ManabiTests.swift; sourceTree = "<group>"; };
 		42988456090C308A5B105011 /* TokenVault.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TokenVault.swift; sourceTree = "<group>"; };
 		42FDC4A77E2679E83DE98A09 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
@@ -178,6 +180,7 @@
 			isa = PBXGroup;
 			children = (
 				F4414BD05F5E97CFBF008878 /* APIClient.swift */,
+				CA0123456789012345678902 /* ResourceCache.swift */,
 				42988456090C308A5B105011 /* TokenVault.swift */,
 			);
 			path = Networking;
@@ -303,6 +306,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				5C3DF744310DB77F0CDE60A5 /* APIClient.swift in Sources */,
+				CA0123456789012345678901 /* ResourceCache.swift in Sources */,
 				1C28723910F5905D392B9BA5 /* APIModels.swift in Sources */,
 				255445A098859C1B8A4EDB41 /* AppModel.swift in Sources */,
 				C84E93C8F4DED4B9806129E0 /* AudioPlayer.swift in Sources */,
@@ -520,8 +524,11 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = app.manabi.ios;
 				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
+				TARGETED_DEVICE_FAMILY = 1;
 			};
 			name = Debug;
 		};
@@ -539,8 +546,11 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = app.manabi.ios;
 				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
+				TARGETED_DEVICE_FAMILY = 1;
 			};
 			name = Release;
 		};

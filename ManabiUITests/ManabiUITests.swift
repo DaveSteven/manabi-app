@@ -81,6 +81,7 @@ final class ManabiUITests: XCTestCase {
         start(in: app)
         let play = app.buttons["audioPlay"]
         XCTAssertTrue(play.waitForExistence(timeout: 20))
+        await fulfillment(of: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: play)], timeout: 60)
         play.tap()
         await fulfillment(of: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", "暂停音频"), object: play)], timeout: 20)
         attach(app, name: "Manabi-listening")
@@ -139,12 +140,14 @@ final class ManabiUITests: XCTestCase {
         XCTAssertGreaterThan(play.frame.minY, 40)
         let slider = app.sliders["audioProgress"]
         XCTAssertGreaterThan(slider.frame.width, 80)
+        await fulfillment(of: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: play)], timeout: 60)
         play.tap()
         await fulfillment(of: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: slider)], timeout: 30)
         play.tap()
         slider.adjust(toNormalizedSliderPosition: 0.6)
         slider.adjust(toNormalizedSliderPosition: 0.1)
         let startValue = slider.value as? String
+        await fulfillment(of: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: play)], timeout: 60)
         play.tap()
         await fulfillment(of: [XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
             slider.value as? String != startValue

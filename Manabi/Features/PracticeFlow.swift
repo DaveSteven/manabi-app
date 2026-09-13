@@ -61,7 +61,7 @@ struct PracticeFlow: View {
             .interactiveDismissDisabled(submitting)
         }
         .sheet(item: $intensiveItem) { item in
-            IntensiveListeningView(practiceId: practice.id, itemId: item.id).environment(model)
+            IntensiveListeningView(practiceId: practice.id, itemId: item.id, examID: item.question.source.examId).environment(model)
         }
         .onDisappear { audio.stop() }
         .onChange(of: index) { _, _ in
@@ -92,7 +92,7 @@ struct PracticeFlow: View {
                     }
 
                     if let url = model.mediaURL(item.question.material.audioUrl) {
-                        ListeningPlayer(url: url, controller: audio)
+                        ListeningPlayer(url: url, examID: item.question.source.examId, controller: audio)
                         Button {
                             audio.pause()
                             intensiveItem = item
@@ -110,7 +110,7 @@ struct PracticeFlow: View {
                             .onAppear { showMaterial = true }
                     }
                     if let imageURL = model.mediaURL(item.question.material.imageUrl) {
-                        QuestionImage(url: imageURL)
+                        QuestionImage(url: imageURL, examID: item.question.source.examId)
                     }
 
                     VStack(alignment: .leading, spacing: 16) {

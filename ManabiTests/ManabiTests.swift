@@ -1,5 +1,6 @@
 import XCTest
 import AVFoundation
+import CryptoKit
 @testable import Manabi
 
 final class ManabiTests: XCTestCase {
@@ -75,7 +76,16 @@ final class ManabiTests: XCTestCase {
         }
         let audio = AudioController()
         defer { audio.stop() }
-        audio.load(url)
+        let bytes = try Data(contentsOf: url)
+        let hash = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let fixture = MediaDownloadFixture(data: bytes)
+        let cache = ResourceCache(automaticDirectory: root.appendingPathComponent("a"), persistentDirectory: root.appendingPathComponent("p"), downloader: { try await fixture.download($0) })
+        let resource = MediaResource(id: "sound", kind: "audio", url: "/api/v1/assets/sound", mimeType: "audio/x-caf", byteSize: Int64(bytes.count), sha256: hash)
+        let cached = try await cache.fetch(resource, baseURL: URL(string: "https://biblenotes.cc")!)
+        XCTAssertEqual(cached.pathExtension, "caf")
+        audio.load(cached)
         let sentence = SubtitleSegment(startMs: 100, endMs: 450, text: "test")
         audio.playSegment(sentence)
         for _ in 0..<80 {
@@ -99,4 +109,84 @@ final class ManabiTests: XCTestCase {
         XCTAssertLessThanOrEqual(audio.current, 0.5)
     }
 
+}
+
+private actor MediaDownloadFixture {
+    var calls = 0
+    let data: Data
+    let failFirst: Bool
+    init(data: Data, failFirst: Bool = false) { self.data = data; self.failFirst = failFirst }
+    func download(_ url: URL) async throws -> (URL, HTTPURLResponse) {
+        calls += 1
+        if failFirst && calls == 1 { throw URLError(.networkConnectionLost) }
+        try await Task.sleep(for: .milliseconds(30))
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try data.write(to: file)
+        return (file, HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+    }
+}
+
+extension ManabiTests {
+    private var sampleResource: MediaResource {
+        MediaResource(id: "sample", kind: "audio", url: "/api/v1/assets/sample", mimeType: "audio/mpeg", byteSize: 3,
+                      sha256: "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
+    }
+
+    func testResourceCacheDeduplicatesPersistsAndRepairs() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let automatic = root.appendingPathComponent("automatic")
+        let persistent = root.appendingPathComponent("persistent")
+        let fixture = MediaDownloadFixture(data: Data("abc".utf8), failFirst: true)
+        let cache = ResourceCache(automaticDirectory: automatic, persistentDirectory: persistent, downloader: { try await fixture.download($0) })
+        let base = URL(string: "https://biblenotes.cc")!
+        let resource = sampleResource
+        async let first = cache.fetch(resource, baseURL: base)
+        async let second = cache.fetch(resource, baseURL: base)
+        let urls = try await [first, second]
+        XCTAssertEqual(urls[0], urls[1])
+        let calls = await fixture.calls
+        XCTAssertEqual(calls, 2, "One shared download plus one transient retry")
+        let usage = try await cache.usage()
+        XCTAssertEqual(usage.automaticBytes, 3)
+        let pinned = try await cache.fetch(resource, baseURL: base, owner: "user/paper")
+        XCTAssertEqual(pinned.deletingLastPathComponent().path, persistent.path)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: urls[0].path))
+        let restarted = ResourceCache(automaticDirectory: automatic, persistentDirectory: persistent, downloader: { try await fixture.download($0) })
+        let restored = try await restarted.localURL(for: resource, baseURL: base)
+        XCTAssertEqual(restored, pinned)
+        let offline = try await restarted.existingURL(for: base.appendingPathComponent("api/v1/assets/sample"), baseURL: base)
+        XCTAssertEqual(offline, pinned)
+        try Data("bad".utf8).write(to: pinned)
+        let corrupted = try await restarted.localURL(for: resource, baseURL: base)
+        XCTAssertNil(corrupted)
+        let repaired = try await restarted.fetch(resource, baseURL: base)
+        XCTAssertEqual(repaired, pinned, "Repair preserves download ownership")
+        XCTAssertEqual(try Data(contentsOf: repaired), Data("abc".utf8))
+        let otherEnvironment = try await restarted.localURL(for: resource, baseURL: URL(string: "http://localhost:8001")!)
+        XCTAssertNil(otherEnvironment)
+        let updated = MediaResource(id: resource.id, kind: resource.kind, url: resource.url, mimeType: resource.mimeType,
+                                    byteSize: 3, sha256: String(repeating: "0", count: 64))
+        let otherVersion = try await restarted.localURL(for: updated, baseURL: base)
+        XCTAssertNil(otherVersion)
+    }
+
+    func testResourceCacheRejectsInvalidDownloadsAndCanRetry() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let fixture = MediaDownloadFixture(data: Data("wrong".utf8))
+        let cache = ResourceCache(automaticDirectory: root.appendingPathComponent("a"), persistentDirectory: root.appendingPathComponent("p"), downloader: { try await fixture.download($0) })
+        let base = URL(string: "https://biblenotes.cc")!
+        for _ in 0..<2 {
+            do { _ = try await cache.fetch(sampleResource, baseURL: base); XCTFail("Invalid file accepted") }
+            catch ResourceCacheError.checksumMismatch { }
+        }
+        let calls = await fixture.calls
+        XCTAssertEqual(calls, 2, "Failed tasks must not poison later retries")
+        let usage = try await cache.usage()
+        XCTAssertEqual(usage.automaticBytes + usage.downloadedBytes, 0)
+        let invalid = MediaResource(id: "sample", kind: "audio", url: "https://other.example/api/v1/assets/sample", mimeType: "audio/mpeg", byteSize: 3, sha256: sampleResource.sha256)
+        do { _ = try await cache.fetch(invalid, baseURL: base); XCTFail("Cross-environment URL accepted") }
+        catch ResourceCacheError.invalidResource { }
+    }
 }

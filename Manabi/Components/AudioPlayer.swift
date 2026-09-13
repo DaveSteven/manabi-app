@@ -136,6 +136,10 @@ final class AudioController {
 
 struct ListeningPlayer: View {
     let url: URL
+    let examID: String
+    @Environment(AppModel.self) private var model
+    @State private var preparing = true
+    @State private var reloadID = UUID()
     let controller: AudioController
     @State private var resumeAfterScrubbing = false
 
@@ -145,14 +149,14 @@ struct ListeningPlayer: View {
                 Image(systemName: "waveform").foregroundStyle(Sakura.rose)
                 Text("听力音频").font(.subheadline.weight(.semibold))
                 Spacer()
-                Text(controller.duration > 0 ? time(controller.duration) : "准备播放").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                Text(preparing ? "正在准备音频…" : (controller.duration > 0 ? time(controller.duration) : "准备播放")).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
             }
             HStack(spacing: 18) {
                 Button { controller.seek(controller.current - 10) } label: { Image(systemName: "gobackward.10").font(.title3) }.accessibilityLabel("后退十秒")
                 Button { controller.toggle() } label: {
                     Image(systemName: controller.isPlaying ? "pause.fill" : "play.fill")
                         .frame(width: 48, height: 48).background(Sakura.rose, in: Circle()).foregroundStyle(.white)
-                }.accessibilityLabel(controller.isPlaying ? "暂停音频" : "播放音频").accessibilityIdentifier("audioPlay")
+                }.disabled(preparing).accessibilityLabel(controller.isPlaying ? "暂停音频" : "播放音频").accessibilityIdentifier("audioPlay")
                 VStack(spacing: 0) {
                     Slider(value: Binding(get: { min(max(controller.current, 0), max(controller.duration, 1)) }, set: { controller.seek($0) }), in: 0...max(controller.duration, 1), onEditingChanged: { editing in
                         if editing {
@@ -168,9 +172,20 @@ struct ListeningPlayer: View {
             }
             if let error = controller.error {
                 Text(error).font(.caption).foregroundStyle(.secondary)
-                Button("重新加载") { controller.stop(); controller.load(url) }.font(.caption.weight(.semibold))
+                Button("重新加载") { reloadID = UUID() }.font(.caption.weight(.semibold))
             }
-        }.padding(18).sakuraGlass().task(id: url) { controller.load(url) }
+        }.padding(18).sakuraGlass().task(id: "\(url.absoluteString)-\(reloadID)") {
+            preparing = true
+            controller.stop()
+            do {
+                let source = try await model.cachedMediaURL(url, examID: examID)
+                try Task.checkCancellation()
+                controller.load(source)
+                preparing = false
+            } catch {
+                if !Task.isCancelled { controller.error = AppModel.describe(error); preparing = false }
+            }
+        }
     }
 
     private func time(_ value: Double) -> String {
@@ -183,6 +198,8 @@ struct ListeningPlayer: View {
 struct IntensiveListeningView: View {
     let practiceId: String
     let itemId: String
+    let examID: String
+    @State private var reloadID = UUID()
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
@@ -229,8 +246,7 @@ struct IntensiveListeningView: View {
                             .font(.caption).foregroundStyle(.secondary)
                         if let error = audio.error {
                             InlineError(message: error) {
-                                guard let url = model.mediaURL(lesson.audioUrl) else { return }
-                                audio.stop(); audio.load(url)
+                                reloadID = UUID()
                             }
                         }
                     } else if !loading && error == nil {
@@ -264,7 +280,7 @@ struct IntensiveListeningView: View {
                 }
             }
         }
-        .task { await load() }
+        .task(id: reloadID) { await load() }
         .onDisappear { audio.stop() }
         .onChange(of: scenePhase) { _, phase in if phase != .active { audio.pause() } }
     }
@@ -279,15 +295,21 @@ struct IntensiveListeningView: View {
 
     private func load() async {
         loading = true
+        audio.stop()
+        lesson = nil
         error = nil
         defer { loading = false }
         do {
             let response: IntensiveListening = try await model.api.get("practices/\(practiceId)/items/\(itemId)/listening")
             guard !Task.isCancelled else { return }
+            if let url = model.mediaURL(response.audioUrl) {
+                let source = try await model.cachedMediaURL(url, examID: examID)
+                try Task.checkCancellation()
+                audio.load(source)
+            }
             lesson = response
             index = 0
             revealed = false
-            if let url = model.mediaURL(response.audioUrl) { audio.load(url) }
         } catch { self.error = AppModel.describe(error) }
     }
 }

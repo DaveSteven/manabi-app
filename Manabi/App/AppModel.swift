@@ -202,6 +202,35 @@ final class AppModel {
         return url
     }
 
+    /// Refresh metadata when online; reuse validated local media when metadata is unavailable.
+    func cachedMediaURL(_ remote: URL, examID: String) async throws -> URL {
+        let base = serverURL
+        let client = api
+        let manifest: ExamResources
+        do {
+            manifest = try await client.get("exam-practice/exams/\(examID)/resources")
+        } catch {
+            try Task.checkCancellation()
+            guard base == serverURL else { throw CancellationError() }
+            if case APIError.http(401, _) = error { throw error }
+            if let local = try? await ResourceCache.shared.existingURL(for: remote, baseURL: base) { return local }
+            return remote // Older servers keep their existing online media behavior.
+        }
+        try Task.checkCancellation()
+        guard base == serverURL else { throw CancellationError() }
+        guard let resource = manifest.items.first(where: {
+            URL(string: $0.url, relativeTo: base)?.path == remote.path
+        }) else { return remote } // Historical practice snapshots may reference retired media.
+        do { return try await ResourceCache.shared.fetch(resource, baseURL: base) }
+        catch {
+            try Task.checkCancellation()
+            guard base == serverURL else { throw CancellationError() }
+            // Never fall back to an older cached version after receiving fresh metadata.
+            guard let versioned = mediaURL(resource.url) else { throw error }
+            return versioned
+        }
+    }
+
     func handle(_ error: Error) {
         if error is CancellationError { return }
         if case APIError.http(401, _) = error {
