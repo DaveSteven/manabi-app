@@ -16,7 +16,7 @@ struct HomeView: View {
                             Text("从一组专项练习开始。").font(.subheadline).foregroundStyle(.secondary)
                         }
                         Spacer(minLength: 0)
-                        PetalMark(size: 72).padding(.top, 20)
+                        ManabiMark(size: 72).padding(.top, 20)
                     }.padding(.top, 4)
 
                     if model.isLoading {

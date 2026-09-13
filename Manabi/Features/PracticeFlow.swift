@@ -233,7 +233,7 @@ struct PracticeFlow: View {
     private var resultView: some View {
         ScrollView {
             VStack(spacing: 26) {
-                PetalMark(size: 100).padding(.top, 35)
+                ManabiMark(size: 100).padding(.top, 35)
                 Text("又积累了一点。").font(.largeTitle.bold())
                 Text("\(practice.level) · \(model.name(for: practice.typeId))").font(.subheadline).foregroundStyle(.secondary)
                 MetricRow {

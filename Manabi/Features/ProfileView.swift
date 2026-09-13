@@ -10,7 +10,7 @@ struct ProfileView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
                     HStack(spacing: 17) {
-                        PetalMark(size: 64).padding(10).background(Sakura.blossom.opacity(0.10), in: Circle())
+                        ManabiMark(size: 64).padding(10).background(Sakura.blossom.opacity(0.10), in: Circle())
                         VStack(alignment: .leading, spacing: 7) {
                             Text(model.user?.username ?? "学习中的你").font(.title2.bold())
                             Text("每一天，都有一点新收获。").font(.caption).foregroundStyle(.secondary)
@@ -98,7 +98,7 @@ struct AuthView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
-                PetalMark(size: 70).padding(.top, 25)
+                ManabiMark(size: 70).padding(.top, 25)
                 Text(register ? "把进步，留在这里。" : "欢迎回来。").font(.largeTitle.bold())
                 Text(register && model.user?.isGuest == true ? "创建账号后，当前的练习记录会继续保留。" : "登录账号，接着上一次的学习。")
                     .font(.subheadline).foregroundStyle(.secondary)
