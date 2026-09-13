@@ -205,6 +205,31 @@ final class ManabiUITests: XCTestCase {
         XCTAssertTrue(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'examType_' AND label CONTAINS '未开始'")).firstMatch.exists)
     }
 
+    func testSimplifiedCacheManagement() async throws {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchEnvironment["MANABI_UI_TESTING"] = "1"
+        app.launch()
+        try await loginIfNeeded(app)
+        app.buttons["examPracticeEntry"].tap()
+        let exam = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'exam_' ")).firstMatch
+        XCTAssertTrue(exam.waitForExistence(timeout: 20))
+        exam.tap()
+        XCTAssertTrue(app.buttons["examType_kanji_reading"].waitForExistence(timeout: 20))
+        XCTAssertFalse(app.buttons["downloadPaperResources"].exists)
+        app.tabBars.buttons["我的"].tap()
+        app.buttons["cacheManagement"].tap()
+        XCTAssertTrue(app.buttons["clearMediaCache"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.staticTexts["自动缓存上限"].exists)
+        XCTAssertFalse(app.staticTexts["主动下载"].exists)
+        XCTAssertTrue(app.switches.allElementsBoundByIndex.isEmpty)
+        attach(app, name: "Manabi-simple-cache")
+        app.buttons["clearMediaCache"].tap()
+        XCTAssertTrue(app.alerts["清理缓存？"].waitForExistence(timeout: 5))
+        app.alerts.buttons["清理"].tap()
+        XCTAssertFalse(app.alerts["清理缓存？"].exists)
+    }
+
     func testLoginRequiredAndLogout() async throws {
         let app = XCUIApplication()
         app.launchEnvironment["MANABI_UI_TESTING"] = "1"

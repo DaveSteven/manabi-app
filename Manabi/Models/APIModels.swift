@@ -47,7 +47,7 @@ enum StudyCategory: String, CaseIterable, Identifiable, Sendable {
         switch self { case .vocabulary: "文字・語彙"; case .grammar: "文法"; case .reading: "読解"; case .listening: "聴解" }
     }
     var symbol: String {
-        switch self { case .vocabulary: "character.book.closed.fill"; case .grammar: "textformat.abc"; case .reading: "book.pages.fill"; case .listening: "headphones" }
+        switch self { case .vocabulary: "character.book.closed.fill"; case .grammar: "puzzlepiece.fill"; case .reading: "book.pages.fill"; case .listening: "headphones" }
     }
     var caption: String {
         switch self {

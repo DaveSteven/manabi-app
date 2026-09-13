@@ -1,4 +1,6 @@
 import Foundation
+import Network
+import Observation
 import CryptoKit
 import UniformTypeIdentifiers
 
@@ -22,40 +24,69 @@ enum ResourceCacheError: Error {
     case invalidResource, invalidResponse, checksumMismatch, http(Int)
 }
 
-/// One shared instance owns these directories. Media is public content; ownership labels
-/// should include account + paper identifiers, never tokens. No study records are stored here.
+/// Shared automatic media cache. The support directory contains only the durable index;
+/// legacy explicit downloads are moved to the cache directory during preparation.
 actor ResourceCache {
     static let shared: ResourceCache = {
         let fm = FileManager.default
         return ResourceCache(
             automaticDirectory: fm.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("ManabiMedia"),
-            persistentDirectory: fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("ManabiMedia"))
+            persistentDirectory: fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("ManabiMedia"),
+            prefetchDownloader: ResourceCache.downloadWiFi)
     }()
 
     typealias Downloader = @Sendable (URL) async throws -> (URL, HTTPURLResponse)
-    struct Usage: Sendable { let automaticBytes: Int64; let downloadedBytes: Int64 }
+    struct Usage: Sendable {
+        let totalBytes: Int64
+        var audioBytes: Int64 = 0
+        var imageBytes: Int64 = 0
+    }
     private struct Entry: Codable {
         var resource: MediaResource
-        var owners: Set<String>
+        var owners: Set<String>? = nil // Legacy download migration only.
         var lastAccess: Date
+        var retained: Bool? = nil
     }
     private let automaticDirectory: URL
     private let persistentDirectory: URL
     private let downloader: Downloader
+    private let prefetchDownloader: Downloader
     private var entries: [String: Entry] = [:]
     private var loaded = false
     private var pending: [String: Task<URL, Error>] = [:]
 
+    private var foreground = Set<String>()
+    private var scopes: [String: Set<UUID>] = [:]
+    private var active = Set<String>()
+    private var waiting: [(String, CheckedContinuation<Void, Error>)] = []
+    private var protections: [UUID: (URL, Set<String>)] = [:]
+    private var grace: [String: Date] = [:]
+
     init(automaticDirectory: URL, persistentDirectory: URL,
+         prefetchDownloader: Downloader? = nil,
          downloader: @escaping Downloader = ResourceCache.download) {
         self.automaticDirectory = automaticDirectory
         self.persistentDirectory = persistentDirectory
         self.downloader = downloader
+        self.prefetchDownloader = prefetchDownloader ?? downloader
     }
 
     private static func download(_ url: URL) async throws -> (URL, HTTPURLResponse) {
+        try await transfer(url, wifiOnly: false)
+    }
+
+    private static func downloadWiFi(_ url: URL) async throws -> (URL, HTTPURLResponse) {
+        try await transfer(url, wifiOnly: true)
+    }
+
+    private static func transfer(_ url: URL, wifiOnly: Bool) async throws -> (URL, HTTPURLResponse) {
         var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData)
         request.timeoutInterval = 60
+        if wifiOnly {
+            request.allowsCellularAccess = false
+            request.allowsExpensiveNetworkAccess = false
+            request.allowsConstrainedNetworkAccess = false
+        }
         let (file, response) = try await URLSession.shared.download(for: request)
         guard let http = response as? HTTPURLResponse else {
             try? FileManager.default.removeItem(at: file)
@@ -75,16 +106,30 @@ actor ResourceCache {
         try directory.setResourceValues(values)
         let index = persistentDirectory.appendingPathComponent("index.json")
         if fm.fileExists(atPath: index.path) {
-            // Do not silently discard ownership when the index cannot be read.
+            // Preserve index errors rather than silently losing track of existing files.
             entries = try JSONDecoder().decode([String: Entry].self, from: Data(contentsOf: index))
         }
-        for (key, entry) in entries {
-            let legacy = (entry.owners.isEmpty ? automaticDirectory : persistentDirectory).appendingPathComponent(key)
+        var migrated = false
+        for (key, var entry) in entries {
             let destination = file(key, entry)
-            if legacy != destination, fm.fileExists(atPath: legacy.path), !fm.fileExists(atPath: destination.path) {
-                try fm.moveItem(at: legacy, to: destination)
+            let oldDirectory = entry.owners?.isEmpty == false || entry.retained == true ? persistentDirectory : automaticDirectory
+            let candidates = [oldDirectory.appendingPathComponent(destination.lastPathComponent), oldDirectory.appendingPathComponent(key)]
+            for old in candidates where old != destination && fm.fileExists(atPath: old.path) {
+                if fm.fileExists(atPath: destination.path) {
+                    // A previous interrupted migration may already have copied the same file.
+                    if (try? Self.verify(destination, resource: entry.resource)) != nil {
+                        try fm.removeItem(at: old)
+                    } else {
+                        try fm.removeItem(at: destination)
+                        try fm.moveItem(at: old, to: destination)
+                    }
+                } else { try fm.moveItem(at: old, to: destination) }
+            }
+            if entry.owners != nil || entry.retained != nil {
+                entry.owners = nil; entry.retained = nil; entries[key] = entry; migrated = true
             }
         }
+        if migrated { try save() }
         loaded = true
     }
 
@@ -113,7 +158,7 @@ actor ResourceCache {
         case "audio/mpeg": suffix = "mp3"
         default: suffix = UTType(mimeType: entry.resource.mimeType)?.preferredFilenameExtension ?? "bin"
         }
-        return (entry.owners.isEmpty ? automaticDirectory : persistentDirectory).appendingPathComponent(key).appendingPathExtension(suffix)
+        return automaticDirectory.appendingPathComponent(key).appendingPathExtension(suffix)
     }
 
     private static func verify(_ file: URL, resource: MediaResource) throws {
@@ -139,7 +184,6 @@ actor ResourceCache {
         let url = file(key, entry)
         do { try Self.verify(url, resource: resource) }
         catch {
-            // Preserve download ownership so a repair returns to persistent storage.
             try? FileManager.default.removeItem(at: url)
             return nil
         }
@@ -149,13 +193,15 @@ actor ResourceCache {
         return url
     }
 
-    /// Cancellation of one caller never cancels another caller's shared download.
-    /// A cancelled caller receives no URL; a completed file may remain as automatic cache.
-    func fetch(_ resource: MediaResource, baseURL: URL, owner: String? = nil) async throws -> URL {
+    /// Foreground requests share existing work; speculative scopes can cancel independently.
+    func fetch(_ resource: MediaResource, baseURL: URL, prefetchScope: UUID? = nil) async throws -> URL {
         try Task.checkCancellation()
         try prepare()
         let (key, remote) = try identity(resource, baseURL: baseURL)
+        if prefetchScope == nil { grace[key] = Date().addingTimeInterval(120) }
         if try localURL(for: resource, baseURL: baseURL) == nil {
+            if let prefetchScope { scopes[key, default: []].insert(prefetchScope) }
+            if prefetchScope == nil { foreground.insert(key); pump() }
             let task: Task<URL, Error>
             if let existing = pending[key] { task = existing }
             else {
@@ -165,34 +211,26 @@ actor ResourceCache {
             _ = try await task.value
         }
         try Task.checkCancellation()
-        guard var entry = entries[key] else { throw ResourceCacheError.invalidResource }
-        if let owner, !owner.isEmpty, !entry.owners.contains(owner) {
-            let old = file(key, entry)
-            let wasAutomatic = entry.owners.isEmpty
-            entry.owners.insert(owner)
-            let destination = file(key, entry)
-            if wasAutomatic {
-                try? FileManager.default.removeItem(at: destination)
-                try FileManager.default.copyItem(at: old, to: destination)
-            }
-            let previous = entries[key]
-            entries[key] = entry
-            do { try save() }
-            catch { entries[key] = previous; throw error }
-            if wasAutomatic { try? FileManager.default.removeItem(at: old) }
-        }
+        guard let entry = entries[key] else { throw ResourceCacheError.invalidResource }
         return file(key, entry)
     }
 
     private func retrieve(_ resource: MediaResource, key: String, remote: URL) async throws -> URL {
-        defer { pending[key] = nil }
+        defer {
+            pending[key] = nil; scopes[key] = nil; foreground.remove(key)
+            active.remove(key); pump()
+        }
+        try await acquire(key)
+        try Task.checkCancellation()
         for attempt in 0..<3 {
             do {
-                let (temporary, response) = try await downloader(remote)
+                let transfer = foreground.contains(key) ? downloader : prefetchDownloader
+                let (temporary, response) = try await transfer(remote)
                 defer { try? FileManager.default.removeItem(at: temporary) }
+                try Task.checkCancellation()
                 guard response.statusCode == 200 else { throw ResourceCacheError.http(response.statusCode) }
                 try Self.verify(temporary, resource: resource)
-                let entry = Entry(resource: resource, owners: entries[key]?.owners ?? [], lastAccess: Date())
+                let entry = Entry(resource: resource, lastAccess: Date())
                 let destination = file(key, entry)
                 // Staging on the destination volume keeps final publication atomic.
                 let staging = destination.deletingLastPathComponent().appendingPathComponent(UUID().uuidString + ".partial")
@@ -217,6 +255,57 @@ actor ResourceCache {
         throw ResourceCacheError.invalidResponse
     }
 
+    // Two media transfers total; at most one speculative transfer. Waiting foreground
+    // work is admitted first, reserving bandwidth for the currently visible question.
+    private func acquire(_ key: String) async throws {
+        try await withTaskCancellationHandler {
+            try Task.checkCancellation()
+            try await withCheckedThrowingContinuation { continuation in
+                waiting.append((key, continuation))
+                pump()
+            }
+        } onCancel: { Task { await self.cancelWaiting(key) } }
+    }
+
+    private func cancelWaiting(_ key: String) {
+        if let index = waiting.firstIndex(where: { $0.0 == key }) {
+            waiting.remove(at: index).1.resume(throwing: CancellationError())
+        }
+        pump()
+    }
+
+    private func pump() {
+        while active.count < 2 {
+            let index = waiting.firstIndex(where: { foreground.contains($0.0) })
+                ?? (active.contains(where: { !foreground.contains($0) }) ? nil : waiting.indices.first)
+            guard let index else { return }
+            let (key, continuation) = waiting.remove(at: index)
+            active.insert(key)
+            continuation.resume()
+        }
+    }
+
+    func cancelPrefetch(scope: UUID) {
+        for (key, values) in scopes where values.contains(scope) {
+            scopes[key]?.remove(scope)
+            if scopes[key]?.isEmpty == true && !foreground.contains(key) { pending[key]?.cancel() }
+        }
+    }
+
+    func protect(scope: UUID, baseURL: URL, paths: Set<String>) {
+        protections[scope] = (baseURL, paths)
+    }
+
+    func releaseProtection(scope: UUID) { protections[scope] = nil }
+
+    private func protected(_ key: String, entry: Entry) -> Bool {
+        if pending[key] != nil || (grace[key] ?? .distantPast) > Date() { return true }
+        return protections.values.contains { base, paths in
+            guard let (expected, url) = try? identity(entry.resource, baseURL: base) else { return false }
+            return expected == key && paths.contains(url.path)
+        }
+    }
+
     /// Offline fallback for an already opened question whose API URL has no version.
     func existingURL(for remote: URL, baseURL: URL) throws -> URL? {
         try prepare()
@@ -231,14 +320,43 @@ actor ResourceCache {
         return nil
     }
 
+    func clearAutomatic() throws {
+        try prepare()
+        for (key, entry) in entries where !protected(key, entry: entry) {
+            let path = file(key, entry)
+            if FileManager.default.fileExists(atPath: path.path) { try FileManager.default.removeItem(at: path) }
+            entries[key] = nil; grace[key] = nil
+        }
+        try save()
+    }
+
     func usage() throws -> Usage {
         try prepare()
-        var automatic: Int64 = 0
-        var downloaded: Int64 = 0
+        var total: Int64 = 0
+        var audio: Int64 = 0
+        var images: Int64 = 0
         for (key, entry) in entries where FileManager.default.fileExists(atPath: file(key, entry).path) {
-            if entry.owners.isEmpty { automatic += entry.resource.byteSize }
-            else { downloaded += entry.resource.byteSize }
+            total += entry.resource.byteSize
+            if entry.resource.kind == "audio" { audio += entry.resource.byteSize }
+            else { images += entry.resource.byteSize }
         }
-        return Usage(automaticBytes: automatic, downloadedBytes: downloaded)
+        return Usage(totalBytes: total, audioBytes: audio, imageBytes: images)
+    }
+}
+
+
+@MainActor @Observable
+final class MediaNetwork {
+    static let shared = MediaNetwork()
+    private(set) var permitsPrefetch = false
+    private let monitor = NWPathMonitor()
+
+    private init() {
+        monitor.pathUpdateHandler = { [weak self] path in
+            let allowed = path.status == .satisfied && path.usesInterfaceType(.wifi)
+                && !path.isExpensive && !path.isConstrained
+            Task { @MainActor [weak self] in self?.permitsPrefetch = allowed }
+        }
+        monitor.start(queue: DispatchQueue(label: "app.manabi.media-network"))
     }
 }

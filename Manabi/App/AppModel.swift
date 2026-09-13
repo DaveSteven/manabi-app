@@ -231,6 +231,49 @@ final class AppModel {
         }
     }
 
+    /// A view-owned task replaces this window on question/network/lifecycle changes.
+    func prefetchPractice(_ items: [PracticeItem], index: Int, allowed: Bool) async {
+        guard items.indices.contains(index) else { return }
+        let scope = UUID()
+        let base = serverURL
+        let client = api
+        let cache = ResourceCache.shared
+        let paths = Set(items.flatMap { [$0.question.material.audioUrl, $0.question.material.imageUrl].compactMap { $0 } }
+            .compactMap { URL(string: $0, relativeTo: base)?.path })
+        await cache.protect(scope: scope, baseURL: base, paths: paths)
+        await withTaskCancellationHandler {
+            do {
+                if allowed {
+                    var manifests: [String: ExamResources] = [:]
+                    var seen = Set<String>()
+                    for position in index..<min(items.count, index + 4) {
+                        try Task.checkCancellation()
+                        guard base == serverURL else { throw CancellationError() }
+                        let question = items[position].question
+                        let exam = question.source.examId
+                        if manifests[exam] == nil {
+                            manifests[exam] = try await client.get("exam-practice/exams/\(exam)/resources")
+                        }
+                        let wanted = Set([question.material.audioUrl, question.material.imageUrl].compactMap { $0 }
+                            .compactMap { URL(string: $0, relativeTo: base)?.path })
+                        for resource in manifests[exam]?.items ?? [] {
+                            guard let path = URL(string: resource.url, relativeTo: base)?.path,
+                                  wanted.contains(path), seen.insert(resource.id).inserted else { continue }
+                            try Task.checkCancellation()
+                            _ = try await cache.fetch(resource, baseURL: base, prefetchScope: position == index ? nil : scope)
+                        }
+                    }
+                }
+            } catch { /* Speculative failures never interrupt answering. */ }
+            await cache.cancelPrefetch(scope: scope)
+            // Keep displayed media protected even after prefetch finishes or fails.
+            while !Task.isCancelled {
+                do { try await Task.sleep(for: .seconds(3600)) } catch { break }
+            }
+            await cache.releaseProtection(scope: scope)
+        } onCancel: { Task { await cache.cancelPrefetch(scope: scope) } }
+    }
+
     func handle(_ error: Error) {
         if error is CancellationError { return }
         if case APIError.http(401, _) = error {

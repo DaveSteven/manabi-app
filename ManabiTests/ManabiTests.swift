@@ -148,20 +148,20 @@ extension ManabiTests {
         let calls = await fixture.calls
         XCTAssertEqual(calls, 2, "One shared download plus one transient retry")
         let usage = try await cache.usage()
-        XCTAssertEqual(usage.automaticBytes, 3)
-        let pinned = try await cache.fetch(resource, baseURL: base, owner: "user/paper")
-        XCTAssertEqual(pinned.deletingLastPathComponent().path, persistent.path)
-        XCTAssertFalse(FileManager.default.fileExists(atPath: urls[0].path))
+        XCTAssertEqual(usage.totalBytes, 3)
+        let cached = try await cache.fetch(resource, baseURL: base)
+        XCTAssertEqual(cached.deletingLastPathComponent().path, automatic.path)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: urls[0].path))
         let restarted = ResourceCache(automaticDirectory: automatic, persistentDirectory: persistent, downloader: { try await fixture.download($0) })
         let restored = try await restarted.localURL(for: resource, baseURL: base)
-        XCTAssertEqual(restored, pinned)
+        XCTAssertEqual(restored, cached)
         let offline = try await restarted.existingURL(for: base.appendingPathComponent("api/v1/assets/sample"), baseURL: base)
-        XCTAssertEqual(offline, pinned)
-        try Data("bad".utf8).write(to: pinned)
+        XCTAssertEqual(offline, cached)
+        try Data("bad".utf8).write(to: cached)
         let corrupted = try await restarted.localURL(for: resource, baseURL: base)
         XCTAssertNil(corrupted)
         let repaired = try await restarted.fetch(resource, baseURL: base)
-        XCTAssertEqual(repaired, pinned, "Repair preserves download ownership")
+        XCTAssertEqual(repaired, cached, "Repair reuses the same cache path")
         XCTAssertEqual(try Data(contentsOf: repaired), Data("abc".utf8))
         let otherEnvironment = try await restarted.localURL(for: resource, baseURL: URL(string: "http://localhost:8001")!)
         XCTAssertNil(otherEnvironment)
@@ -184,9 +184,174 @@ extension ManabiTests {
         let calls = await fixture.calls
         XCTAssertEqual(calls, 2, "Failed tasks must not poison later retries")
         let usage = try await cache.usage()
-        XCTAssertEqual(usage.automaticBytes + usage.downloadedBytes, 0)
+        XCTAssertEqual(usage.totalBytes, 0)
         let invalid = MediaResource(id: "sample", kind: "audio", url: "https://other.example/api/v1/assets/sample", mimeType: "audio/mpeg", byteSize: 3, sha256: sampleResource.sha256)
         do { _ = try await cache.fetch(invalid, baseURL: base); XCTFail("Cross-environment URL accepted") }
         catch ResourceCacheError.invalidResource { }
+    }
+}
+
+private actor SchedulingDownloads {
+    var started: [String] = []
+    var cancelled: [String] = []
+    var active = 0
+    var peak = 0
+    func download(_ url: URL) async throws -> (URL, HTTPURLResponse) {
+        let id = url.lastPathComponent
+        started.append(id); active += 1; peak = max(peak, active)
+        defer { active -= 1 }
+        do { try await Task.sleep(for: .milliseconds(400)) }
+        catch { cancelled.append(id); throw error }
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try Data("abc".utf8).write(to: file)
+        return (file, HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+    }
+}
+
+extension ManabiTests {
+    private func media(_ id: String) -> MediaResource {
+        MediaResource(id: id, kind: "audio", url: "/api/v1/assets/\(id)", mimeType: "audio/mpeg", byteSize: 3, sha256: sampleResource.sha256)
+    }
+
+    func testPrefetchSchedulingCancellationAndForegroundPromotion() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let fixture = SchedulingDownloads()
+        let cache = ResourceCache(automaticDirectory: root.appendingPathComponent("a"), persistentDirectory: root.appendingPathComponent("p"), downloader: { try await fixture.download($0) })
+        let base = URL(string: "https://biblenotes.cc")!
+        let scope = UUID()
+        let a = media("a"), b = media("b"), c = media("c")
+        let first = Task { try await cache.fetch(a, baseURL: base, prefetchScope: scope) }
+        for _ in 0..<100 {
+            if await fixture.started.contains("a") { break }
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        let queued = Task { try await cache.fetch(b, baseURL: base, prefetchScope: scope) }
+        try await Task.sleep(for: .milliseconds(30))
+        let visible = Task { try await cache.fetch(c, baseURL: base) }
+        for _ in 0..<100 {
+            if await fixture.started.contains("c") { break }
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        await cache.cancelPrefetch(scope: scope)
+        _ = try await visible.value
+        _ = await first.result; _ = await queued.result
+        let started = await fixture.started
+        XCTAssertEqual(started, ["a", "c"])
+        let peak = await fixture.peak
+        XCTAssertEqual(peak, 2)
+        let cancelled = await fixture.cancelled
+        XCTAssertTrue(cancelled.contains("a"))
+
+        let promotedScope = UUID()
+        let d = media("d")
+        let speculative = Task { try await cache.fetch(d, baseURL: base, prefetchScope: promotedScope) }
+        for _ in 0..<100 {
+            if await fixture.started.contains("d") { break }
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        let promoted = Task { try await cache.fetch(d, baseURL: base) }
+        try await Task.sleep(for: .milliseconds(30))
+        await cache.cancelPrefetch(scope: promotedScope)
+        let paths = try await [speculative.value, promoted.value]
+        XCTAssertEqual(paths[0], paths[1])
+        let finalStarts = await fixture.started
+        XCTAssertEqual(finalStarts.filter { $0 == "d" }.count, 1)
+    }
+
+
+}
+
+extension ManabiTests {
+    func testCancellingOneDownloadKeepsAnotherSharedDownloadAlive() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let fixture = SchedulingDownloads()
+        let cache = ResourceCache(automaticDirectory: root.appendingPathComponent("a"), persistentDirectory: root.appendingPathComponent("p"), downloader: { try await fixture.download($0) })
+        let base = URL(string: "https://biblenotes.cc")!
+        let resource = media("shared-download")
+        let one = UUID(), two = UUID()
+        let first = Task { try await cache.fetch(resource, baseURL: base, prefetchScope: one) }
+        for _ in 0..<100 {
+            if await fixture.started.count == 1 { break }
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        let second = Task { try await cache.fetch(resource, baseURL: base, prefetchScope: two) }
+        try await Task.sleep(for: .milliseconds(30))
+        first.cancel()
+        await cache.cancelPrefetch(scope: one)
+        let file = try await second.value
+        _ = await first.result
+        XCTAssertTrue(FileManager.default.fileExists(atPath: file.path))
+        let starts = await fixture.started
+        let cancellations = await fixture.cancelled
+        XCTAssertEqual(starts.count, 1)
+        XCTAssertTrue(cancellations.isEmpty)
+    }
+}
+
+extension ManabiTests {
+    func testClearingCachePreservesCurrentlyUsedMedia() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let fixture = MediaDownloadFixture(data: Data("abc".utf8))
+        let cache = ResourceCache(automaticDirectory: root.appendingPathComponent("a"), persistentDirectory: root.appendingPathComponent("p"), downloader: { try await fixture.download($0) })
+        let base = URL(string: "https://biblenotes.cc")!
+        let scope = UUID()
+        let path = try await cache.fetch(media("playing"), baseURL: base, prefetchScope: scope)
+        let unused = try await cache.fetch(media("unused"), baseURL: base, prefetchScope: scope)
+        await cache.protect(scope: scope, baseURL: base, paths: ["/api/v1/assets/playing"])
+        try await cache.clearAutomatic()
+        XCTAssertTrue(FileManager.default.fileExists(atPath: path.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: unused.path))
+        await cache.releaseProtection(scope: scope)
+        try await cache.clearAutomatic()
+        let usage = try await cache.usage()
+        XCTAssertEqual(usage.totalBytes, 0)
+    }
+
+    func testLegacyDownloadsBecomeClearableAutomaticCache() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let automatic = root.appendingPathComponent("a"), persistent = root.appendingPathComponent("p")
+        let fixture = MediaDownloadFixture(data: Data("abc".utf8))
+        let cache = ResourceCache(automaticDirectory: automatic, persistentDirectory: persistent, downloader: { try await fixture.download($0) })
+        let base = URL(string: "https://biblenotes.cc")!
+        let local = try await cache.fetch(sampleResource, baseURL: base, prefetchScope: UUID())
+        let old = persistent.appendingPathComponent(local.lastPathComponent)
+        try FileManager.default.moveItem(at: local, to: old)
+        let index = persistent.appendingPathComponent("index.json")
+        var rows = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: index)) as? [String: [String: Any]])
+        let key = try XCTUnwrap(rows.keys.first)
+        rows[key]?["owners"] = ["old-paper-download"]
+        try JSONSerialization.data(withJSONObject: rows).write(to: index)
+        let restarted = ResourceCache(automaticDirectory: automatic, persistentDirectory: persistent)
+        let restored = try await restarted.localURL(for: sampleResource, baseURL: base)
+        XCTAssertEqual(restored, local)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: old.path))
+        try await restarted.clearAutomatic()
+        XCTAssertFalse(FileManager.default.fileExists(atPath: local.path))
+    }
+}
+
+extension ManabiTests {
+    func testCacheWriteFailureCanRecoverWithoutPublishingBrokenEntry() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let automatic = root.appendingPathComponent("a")
+        let fixture = MediaDownloadFixture(data: Data("abc".utf8))
+        let cache = ResourceCache(automaticDirectory: automatic, persistentDirectory: root.appendingPathComponent("p"), downloader: { try await fixture.download($0) })
+        _ = try await cache.usage()
+        try FileManager.default.removeItem(at: automatic)
+        try Data("unavailable directory".utf8).write(to: automatic)
+        let base = URL(string: "https://biblenotes.cc")!
+        do { _ = try await cache.fetch(sampleResource, baseURL: base); XCTFail("Write should fail") }
+        catch { XCTAssertFalse(error is CancellationError) }
+        let missing = try await cache.localURL(for: sampleResource, baseURL: base)
+        XCTAssertNil(missing)
+        try FileManager.default.removeItem(at: automatic)
+        try FileManager.default.createDirectory(at: automatic, withIntermediateDirectories: true)
+        let recovered = try await cache.fetch(sampleResource, baseURL: base)
+        XCTAssertEqual(try Data(contentsOf: recovered), Data("abc".utf8))
     }
 }

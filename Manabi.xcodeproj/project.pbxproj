@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		CB0123456789012345678901 /* CacheManagementView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB0123456789012345678902 /* CacheManagementView.swift */; };
 		CA0123456789012345678901 /* ResourceCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA0123456789012345678902 /* ResourceCache.swift */; };
 		1C28723910F5905D392B9BA5 /* APIModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3468D144C3599672B78D518 /* APIModels.swift */; };
 		255445A098859C1B8A4EDB41 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42FDC4A77E2679E83DE98A09 /* AppModel.swift */; };
@@ -45,6 +46,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		CB0123456789012345678902 /* CacheManagementView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CacheManagementView.swift; sourceTree = "<group>"; };
 		CA0123456789012345678902 /* ResourceCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResourceCache.swift; sourceTree = "<group>"; };
 		181D5E1ECCFEC814C38CA1CA /* ManabiTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ManabiTests.swift; sourceTree = "<group>"; };
 		42988456090C308A5B105011 /* TokenVault.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TokenVault.swift; sourceTree = "<group>"; };
@@ -124,6 +126,7 @@
 				B76509B649CBB55FBA0C5151 /* ExamPracticeViews.swift */,
 				B4B5EB406247A09D9E427FA2 /* PracticeFlow.swift */,
 				B9103CFC61A0E987DCF33A32 /* ProfileView.swift */,
+				CB0123456789012345678902 /* CacheManagementView.swift */,
 				FB1C88FB0745D394389471C5 /* WrongQuestionsView.swift */,
 			);
 			path = Features;
@@ -307,6 +310,7 @@
 			files = (
 				5C3DF744310DB77F0CDE60A5 /* APIClient.swift in Sources */,
 				CA0123456789012345678901 /* ResourceCache.swift in Sources */,
+				CB0123456789012345678901 /* CacheManagementView.swift in Sources */,
 				1C28723910F5905D392B9BA5 /* APIModels.swift in Sources */,
 				255445A098859C1B8A4EDB41 /* AppModel.swift in Sources */,
 				C84E93C8F4DED4B9806129E0 /* AudioPlayer.swift in Sources */,

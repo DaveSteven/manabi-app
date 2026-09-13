@@ -30,14 +30,17 @@ struct ProfileView: View {
                     }
 
                     VStack(spacing: 0) {
+                        NavigationLink { CacheManagementView() } label: { settingsRow("缓存管理", symbol: "arrow.down.circle") }
+                            .accessibilityIdentifier("cacheManagement")
+                        Divider().padding(.leading, 40)
                         NavigationLink { HistoryView() } label: { settingsRow("练习记录", symbol: "clock.arrow.circlepath") }
-                        Divider().padding(.leading, 46)
+                        Divider().padding(.leading, 40)
                         HStack {
-                            Label("当前学习等级", systemImage: "graduationcap").foregroundStyle(Sakura.ink)
+                            settingsLabel("当前学习等级", symbol: "graduationcap")
                             Spacer()
                             LevelMenu()
                         }.padding(.vertical, 18)
-                        Divider().padding(.leading, 46)
+                        Divider().padding(.leading, 40)
                         Button { model.showSettings = true } label: { settingsRow("学习服务设置", symbol: "network") }
                     }.studyCard(padding: 19)
                     if model.user != nil {
@@ -63,9 +66,19 @@ struct ProfileView: View {
         }
     }
 
+    private func settingsLabel(_ title: String, symbol: String) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: symbol)
+                .font(.system(size: 18))
+                .frame(width: 28, height: 24)
+                .accessibilityHidden(true)
+            Text(title).font(.body)
+        }.foregroundStyle(Sakura.ink)
+    }
+
     private func settingsRow(_ title: String, symbol: String) -> some View {
         HStack {
-            Label(title, systemImage: symbol).foregroundStyle(Sakura.ink)
+            settingsLabel(title, symbol: symbol)
             Spacer()
             Image(systemName: "chevron.right").font(.caption).foregroundStyle(.secondary)
         }.padding(.vertical, 18).contentShape(Rectangle())

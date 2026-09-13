@@ -16,6 +16,7 @@ struct PracticeFlow: View {
     @State private var audio = AudioController()
     @State private var foregroundStart = Date()
     @State private var elapsed: TimeInterval = 0
+    @State private var network = MediaNetwork.shared
     @State private var pendingElapsed: Int?
 
     let returnsToExamDirectory: Bool
@@ -62,6 +63,10 @@ struct PracticeFlow: View {
         }
         .sheet(item: $intensiveItem) { item in
             IntensiveListeningView(practiceId: practice.id, itemId: item.id, examID: item.question.source.examId).environment(model)
+        }
+        .task(id: "\(index)-\(network.permitsPrefetch)-\(scenePhase == .active)-\(showingResult)-\(model.serverURL)") {
+            guard scenePhase == .active, !showingResult else { return }
+            await model.prefetchPractice(practice.items, index: index, allowed: network.permitsPrefetch)
         }
         .onDisappear { audio.stop() }
         .onChange(of: index) { _, _ in
