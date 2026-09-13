@@ -31,12 +31,17 @@ struct SakuraBackground: View {
 struct ManabiMark: View {
     var size: CGFloat = 60
     var body: some View {
-        Image("ManabiLogo")
-            .resizable()
-            .scaledToFit()
-            .frame(width: size, height: size)
-            .clipShape(RoundedRectangle(cornerRadius: size * 0.22, style: .continuous))
-            .accessibilityHidden(true)
+        ZStack {
+            ForEach(0..<5) { index in
+                Ellipse().fill(Sakura.blossom.opacity(0.65))
+                    .frame(width: size * 0.30, height: size * 0.48)
+                    .offset(y: -size * 0.22)
+                    .rotationEffect(.degrees(Double(index) * 72))
+            }
+            Circle().fill(Sakura.rose).frame(width: size * 0.12, height: size * 0.12)
+        }
+        .frame(width: size, height: size)
+        .accessibilityHidden(true)
     }
 }
 
