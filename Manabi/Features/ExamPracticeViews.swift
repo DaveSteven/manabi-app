@@ -7,21 +7,48 @@ struct ExamPracticeView: View {
     @State private var loading = true
     @State private var error: String?
     @State private var requestID = UUID()
+    @State private var selectedYear: Int?
+    @State private var pendingYear: Int?
+    @State private var showingYearFilter = false
 
     private var years: [Int] { Set(exams.map { $0.year ?? 0 }).sorted(by: >) }
+    private var visibleYears: [Int] { years.filter { selectedYear == nil || $0 == selectedYear } }
+
+    private func yearTitle(_ year: Int) -> String {
+        year == 0 ? "其他试卷" : "\(year) 年"
+    }
 
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 14) {
                 Text("\(level) · 历年真题").font(.title2.bold())
                 Text("先选试卷，再自由选择想练的模块。").font(.subheadline).foregroundStyle(.secondary)
+                if !exams.isEmpty {
+                    Button {
+                        pendingYear = selectedYear
+                        showingYearFilter = true
+                    } label: {
+                        HStack {
+                            Text("年份").font(.subheadline.weight(.medium)).foregroundStyle(Sakura.ink)
+                            Spacer()
+                            Text(verbatim: selectedYear.map(yearTitle) ?? "全部年份")
+                            Image(systemName: "chevron.up.chevron.down").font(.caption)
+                        }
+                        .foregroundStyle(Sakura.rose)
+                        .frame(minHeight: 44)
+                        .contentShape(Rectangle())
+                        .studyCard(padding: 12)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("examYearFilter")
+                }
                 if let error { InlineError(message: error) { Task { await load() } } }
                 if loading && exams.isEmpty { ProgressView().frame(maxWidth: .infinity) }
                 if !loading && exams.isEmpty && error == nil {
                     ContentUnavailableView("暂无可练试卷", systemImage: "calendar")
                 }
-                ForEach(years, id: \.self) { year in
-                    Text(year == 0 ? "其他试卷" : "\(year) 年")
+                ForEach(visibleYears, id: \.self) { year in
+                    Text(verbatim: yearTitle(year))
                         .font(.headline).padding(.top, 8)
                     ForEach(exams.filter { ($0.year ?? 0) == year }) { exam in
                         NavigationLink {
@@ -43,6 +70,38 @@ struct ExamPracticeView: View {
             .task { await load() }
             .refreshable { await load() }
             .onChange(of: model.presentedPractice?.id) { _, id in if id == nil { Task { await load() } } }
+            .sheet(isPresented: $showingYearFilter) {
+                NavigationStack {
+                    VStack {
+                        Picker("年份", selection: $pendingYear) {
+                            Text("全部年份").tag(Int?.none)
+                            ForEach(years, id: \.self) { year in
+                                Text(verbatim: yearTitle(year)).tag(Optional(year))
+                            }
+                        }
+                        .pickerStyle(.wheel)
+                        .labelsHidden()
+                        .accessibilityIdentifier("examYearWheel")
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .navigationTitle("选择年份")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("取消") { showingYearFilter = false }
+                        }
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("完成") {
+                                selectedYear = pendingYear.flatMap { years.contains($0) ? $0 : nil }
+                                showingYearFilter = false
+                            }
+                        }
+                    }
+                }
+                .tint(Sakura.rose)
+                .presentationDetents([.height(320)])
+                .presentationDragIndicator(.visible)
+            }
     }
 
     private func load() async {
@@ -67,6 +126,9 @@ struct ExamPracticeView: View {
             }
             guard !Task.isCancelled, requestID == request, api === model.api, userID == model.user?.id else { return }
             exams = ExamProgress.combined(rows)
+            if let selectedYear, !years.contains(selectedYear) {
+                self.selectedYear = nil
+            }
             error = nil
         } catch {
             guard !Task.isCancelled, requestID == request else { return }
