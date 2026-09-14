@@ -84,15 +84,29 @@ struct PracticeFlow: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     Color.clear.frame(height: 0).id("top")
-                    ProgressView(value: Double(index + 1), total: Double(max(practice.total, 1))).tint(Sakura.rose)
+                    GeometryReader { geometry in
+                        let count = max(practice.total, 1)
+                        let spacing = min(4, geometry.size.width / CGFloat(count) * 0.2)
+                        HStack(spacing: spacing) {
+                            ForEach(0..<count, id: \.self) { position in
+                                Capsule()
+                                    .fill(position == index ? Sakura.rose :
+                                          position < index ? Sakura.rose.opacity(0.5) : Sakura.blossom.opacity(0.2))
+                                    .frame(maxWidth: .infinity)
+                            }
+                        }
+                    }
+                    .frame(height: 6)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("试题进度")
+                    .accessibilityValue("第 \(index + 1) 题，共 \(practice.total) 题")
                     HStack {
                         Text("\(practice.level) · \(item.question.source.examTitle)").font(.caption.weight(.medium)).foregroundStyle(.secondary)
                         Spacer()
                         Text(practice.mode == "exam" ? "试卷练习" : "真题专项").font(.caption2.weight(.medium)).foregroundStyle(Sakura.rose)
                     }
 
-                    if let url = model.mediaURL(item.question.material.audioUrl) {
-                        ListeningPlayer(url: url, examID: item.question.source.examId, controller: audio)
+                    if model.mediaURL(item.question.material.audioUrl) != nil {
                         Button {
                             audio.pause()
                             intensiveItem = item
@@ -141,7 +155,12 @@ struct PracticeFlow: View {
                 }.padding(.horizontal, 22).padding(.bottom, 12).frame(maxWidth: 720).frame(maxWidth: .infinity)
             }
             .safeAreaInset(edge: .bottom) {
-                VStack(spacing: 0) {
+                VStack(spacing: 12) {
+                    if let url = model.mediaURL(item.question.material.audioUrl) {
+                        ListeningPlayer(url: url, examID: item.question.source.examId, controller: audio)
+                        Divider()
+                            .padding(.vertical, 4)
+                    }
                     PrimaryButton(item.feedback == nil ? (pendingElapsed == nil ? "确认答案" : "重试提交") : (index == practice.items.count - 1 ? "查看练习结果" : "下一题"), symbol: item.feedback == nil ? nil : "arrow.right", loading: submitting, disabled: item.feedback == nil && selected == nil) {
                         if item.feedback != nil {
                             if index == practice.items.count - 1 { showingResult = true; audio.pause() }
@@ -150,8 +169,9 @@ struct PracticeFlow: View {
                             Task { await submit(item); if self.item?.feedback != nil { withAnimation { proxy.scrollTo("feedback", anchor: .top) } } }
                         }
                     }.accessibilityIdentifier("answerAction")
-                }.padding(.horizontal, 22).padding(.top, 12).padding(.bottom, 12)
-                    .background(.regularMaterial)
+                }.padding(.horizontal, 22).padding(.vertical, 12)
+                    .frame(maxWidth: 720).frame(maxWidth: .infinity)
+                    .background(Sakura.surface.opacity(0.96))
             }
             .onChange(of: item.feedback != nil) { _, hasFeedback in
                 if hasFeedback {
@@ -208,15 +228,24 @@ struct PracticeFlow: View {
                 DisclosureGroup("参考译文") { RichText(content: feedback.translation, fontSize: 17).padding(.top, 12) }.font(.subheadline)
             }
             if !feedback.subtitles.isEmpty {
-                DisclosureGroup("听力原文 · 点击定位") {
-                    VStack(alignment: .leading, spacing: 14) {
+                DisclosureGroup("听力原文") {
+                    VStack(alignment: .leading, spacing: 4) {
                         ForEach(feedback.subtitles) { segment in
-                            Button { audio.replay(segment) } label: {
-                                HStack(alignment: .top, spacing: 10) {
-                                    Image(systemName: "play.circle").foregroundStyle(Sakura.rose)
-                                    Text(segment.text).font(.body).lineSpacing(3).foregroundStyle(Sakura.ink)
-                                }
-                            }.buttonStyle(.plain)
+                            let playing = audio.isPlayingSegment(segment)
+                            Button {
+                                audio.playFrom(Double(segment.startMs) / 1000)
+                            } label: {
+                                Text(segment.text).font(.body).lineSpacing(1)
+                                    .foregroundStyle(playing ? Sakura.rose : Sakura.ink)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 6)
+                                .background(playing ? Sakura.blossom.opacity(0.16) : Color.clear, in: RoundedRectangle(cornerRadius: 12))
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("从此处播放：\(segment.text)")
+                            .accessibilityAddTraits(playing ? [.isSelected] : [])
                         }
                     }.padding(.top, 14)
                 }.font(.subheadline)

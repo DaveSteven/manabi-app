@@ -88,12 +88,18 @@ final class ManabiTests: XCTestCase {
         audio.load(cached)
         let sentence = SubtitleSegment(startMs: 100, endMs: 450, text: "test")
         audio.playSegment(sentence)
+        for _ in 0..<50 {
+            if audio.isPlayingSegment(sentence) { break }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertTrue(audio.isPlayingSegment(sentence))
         for _ in 0..<80 {
             if audio.completedPlays == 1 && !audio.isPlaying { break }
             try await Task.sleep(for: .milliseconds(100))
         }
         XCTAssertEqual(audio.completedPlays, 1)
         XCTAssertFalse(audio.isPlaying)
+        XCTAssertFalse(audio.isPlayingSegment(sentence))
         audio.pause()
         let loops = audio.completedPlays
         try await Task.sleep(for: .milliseconds(700))
@@ -107,6 +113,13 @@ final class ManabiTests: XCTestCase {
         XCTAssertEqual(audio.completedPlays, loops + 1)
         XCTAssertFalse(audio.isPlaying)
         XCTAssertLessThanOrEqual(audio.current, 0.5)
+        audio.playFrom(Double(sentence.startMs) / 1000)
+        for _ in 0..<30 {
+            if audio.current > 1 { break }
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        XCTAssertGreaterThan(audio.current, 1)
+        XCTAssertFalse(audio.isPlayingSegment(sentence))
     }
 
 }

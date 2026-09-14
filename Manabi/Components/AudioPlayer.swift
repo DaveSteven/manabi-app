@@ -1,6 +1,7 @@
 import SwiftUI
 import AVFoundation
 import Observation
+import UIKit
 
 @MainActor @Observable
 final class AudioController {
@@ -72,6 +73,9 @@ final class AudioController {
     func seek(_ seconds: Double) {
         let value = max(0, min(seconds, duration > 0 ? duration : seconds))
         guard let player else { return }
+        segment = nil
+        player.currentItem?.forwardPlaybackEndTime = .invalid
+        seekVersion += 1
         scrubVersion += 1
         let version = scrubVersion
         seeking = true
@@ -91,6 +95,8 @@ final class AudioController {
     func playSegment(_ segment: SubtitleSegment) {
         guard segment.endMs > segment.startMs, let player else { return }
         pause()
+        scrubVersion += 1
+        seeking = false
         if self.segment?.id != segment.id { completedPlays = 0 }
         self.segment = segment
         wantsPlayback = true
@@ -130,7 +136,18 @@ final class AudioController {
         error = nil
     }
 
-    func replay(_ segment: SubtitleSegment) { seek(Double(segment.startMs) / 1000); if !isPlaying { toggle() } }
+    func playFrom(_ seconds: Double) {
+        pause()
+        seek(seconds)
+        toggle()
+    }
+
+    func isPlayingSegment(_ subtitle: SubtitleSegment) -> Bool {
+        guard isPlaying else { return false }
+        if let segment { return segment.id == subtitle.id }
+        let milliseconds = current * 1000
+        return milliseconds >= Double(subtitle.startMs) && milliseconds < Double(subtitle.endMs)
+    }
 }
 
 struct ListeningPlayer: View {
@@ -143,10 +160,10 @@ struct ListeningPlayer: View {
     @State private var resumeAfterScrubbing = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 15) {
+        VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 13) {
                 Image(systemName: "waveform").foregroundStyle(Sakura.rose)
-                Text("听力音频").font(.subheadline.weight(.semibold))
+                Text("全文播放").font(.caption.weight(.semibold))
                 Spacer()
                 Text(preparing ? "正在准备音频…" : (controller.duration > 0 ? time(controller.duration) : "准备播放")).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
             }
@@ -173,7 +190,7 @@ struct ListeningPlayer: View {
                 Text(error).font(.caption).foregroundStyle(.secondary)
                 Button("重新加载") { reloadID = UUID() }.font(.caption.weight(.semibold))
             }
-        }.padding(18).sakuraGlass().task(id: "\(url.absoluteString)-\(reloadID)") {
+        }.task(id: "\(url.absoluteString)-\(reloadID)") {
             preparing = true
             controller.stop()
             do {
@@ -228,7 +245,7 @@ struct IntensiveListeningView: View {
                         VStack(alignment: .leading, spacing: 22) {
                             HStack { Label("日文原文", systemImage: "text.alignleft"); Spacer(); Image(systemName: revealed ? "eye" : "eye.slash") }
                                 .font(.caption).foregroundStyle(.secondary)
-                            Text(segment.text).font(.title2).lineSpacing(6)
+                            TranscriptText(text: segment.text)
                                 .blur(radius: revealed ? 0 : 9)
                                 .accessibilityHidden(!revealed)
                                 .textSelection(.disabled)
@@ -314,5 +331,43 @@ struct IntensiveListeningView: View {
             index = 0
             revealed = false
         } catch { self.error = AppModel.describe(error) }
+    }
+}
+
+private struct TranscriptText: UIViewRepresentable {
+    let text: String
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    func makeUIView(context: Context) -> UITextView {
+        let view = UITextView()
+        view.isEditable = false
+        view.isSelectable = false
+        view.isScrollEnabled = false
+        view.backgroundColor = .clear
+        view.textContainerInset = .zero
+        view.textContainer.lineFragmentPadding = 0
+        view.textContainer.lineBreakMode = .byCharWrapping
+        view.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        return view
+    }
+
+    func updateUIView(_ view: UITextView, context: Context) {
+        let _ = dynamicTypeSize
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineSpacing = 6
+        paragraph.lineBreakMode = .byCharWrapping
+        paragraph.lineBreakStrategy = []
+        view.attributedText = NSAttributedString(string: text, attributes: [
+            .font: UIFont.preferredFont(forTextStyle: .title2),
+            .foregroundColor: UIColor.label,
+            .paragraphStyle: paragraph
+        ])
+        view.invalidateIntrinsicContentSize()
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: UITextView, context: Context) -> CGSize? {
+        guard let width = proposal.width, width.isFinite, width > 0 else { return nil }
+        let size = uiView.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude))
+        return CGSize(width: width, height: ceil(size.height))
     }
 }
