@@ -33,13 +33,8 @@ final class ManabiUITests: XCTestCase {
         attachment.lifetime = .keepAlways
         add(attachment)
         app.buttons["exitPractice"].tap()
-        assertCenteredAlert(in: app, title: "退出本次练习？")
-        attach(app, name: "Manabi-practice-exit-alert")
-        app.alerts.buttons.matching(identifier: "cancelPracticeExit").firstMatch.tap()
-        XCTAssertTrue(app.buttons["answerAction"].exists)
-        app.buttons["exitPractice"].tap()
-        app.alerts.buttons.matching(identifier: "confirmPracticeExit").firstMatch.tap()
         XCTAssertTrue(app.buttons["startPractice"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.alerts.firstMatch.exists)
         app.terminate()
         app.launch()
         let resume = app.buttons["continuePractice"]
@@ -129,7 +124,9 @@ final class ManabiUITests: XCTestCase {
         XCTAssertTrue(app.buttons["examType_kanji_reading"].waitForExistence(timeout: 20))
         XCTAssertFalse(app.buttons["audioPlay"].exists)
         attach(app, name: "Manabi-exam-directory")
-        app.buttons["examJump_listening"].tap()
+        let listeningFilter = app.buttons["examCategoryFilter_listening"]
+        if !listeningFilter.isHittable { app.buttons["examCategoryFilter_vocabulary"].swipeLeft() }
+        listeningFilter.tap()
         let type = app.buttons["examType_listening_task"]
         XCTAssertTrue(type.waitForExistence(timeout: 20))
         attach(app, name: "Manabi-exam-types")
@@ -162,7 +159,6 @@ final class ManabiUITests: XCTestCase {
         app.buttons["answerAction"].tap()
         await fulfillment(of: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", "下一题"), object: app.buttons["answerAction"])], timeout: 20)
         app.buttons["exitPractice"].tap()
-        app.alerts.buttons.matching(identifier: "confirmPracticeExit").firstMatch.tap()
         await fulfillment(of: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "label CONTAINS '1 /' AND label CONTAINS '进行中'"), object: type)], timeout: 20)
         attach(app, name: "Manabi-exam-saved-progress")
         app.terminate()
@@ -176,9 +172,8 @@ final class ManabiUITests: XCTestCase {
         XCTAssertTrue(play.waitForExistence(timeout: 20))
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH '2 /'")).firstMatch.exists)
         app.buttons["exitPractice"].tap()
-        app.alerts.buttons.matching(identifier: "confirmPracticeExit").firstMatch.tap()
-        XCTAssertTrue(app.buttons["examJump_vocabulary"].waitForExistence(timeout: 10))
-        app.buttons["examJump_vocabulary"].tap()
+        XCTAssertTrue(app.buttons["examCategoryFilter_vocabulary"].waitForExistence(timeout: 10))
+        app.buttons["examCategoryFilter_vocabulary"].tap()
         let completedType = app.buttons["examType_kanji_reading"]
         completedType.tap()
         let position = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH '1 /'")).firstMatch

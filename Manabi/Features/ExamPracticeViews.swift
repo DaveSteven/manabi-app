@@ -163,70 +163,88 @@ private struct ExamDirectoryView: View {
     @State private var error: String?
     @State private var requestID = UUID()
     @State private var lastTypeID: String?
+    @State private var selectedCategory: StudyCategory?
+
+    private var visibleCategories: [StudyCategory] {
+        StudyCategory.allCases.filter { selectedCategory == nil || $0 == selectedCategory }
+    }
 
     private var lastModuleKey: String { "manabi.exam.last-module.\(model.user?.id ?? "").\(exam.id)" }
     private var resumable: ExamTypeProgress? {
-        types.first { $0.id == lastTypeID && $0.practiceId != nil && $0.status != "completed" }
+        types.first {
+            $0.id == lastTypeID && $0.practiceId != nil && $0.status != "completed"
+                && (selectedCategory == nil || $0.category == selectedCategory?.rawValue)
+        }
     }
 
     var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    Text("\(exam.level) · \(exam.dateTitle)").font(.title2.bold())
-                    Text("自由选择模块练习，完成后返回目录。进度仅记录练习覆盖情况。")
-                        .font(.subheadline).foregroundStyle(.secondary)
-                    if let error { InlineError(message: error) { Task { await load() } } }
-                    if loading && types.isEmpty { ProgressView().frame(maxWidth: .infinity) }
-                    if !types.isEmpty {
-                        ExamProgressLabel(status: types.allSatisfy { $0.status == "completed" } ? "completed" : types.contains { $0.practiceId != nil } ? "active" : "not_started",
-                                          answered: types.reduce(0) { $0 + $1.answered }, total: types.reduce(0) { $0 + $1.total })
-                        if let type = resumable {
-                            Button { Task { await open(type) } } label: {
-                                Label("继续上次模块 · \(type.nameZh)", systemImage: "play.circle.fill")
-                                    .font(.subheadline.weight(.semibold)).frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                            }.disabled(opening != nil).accessibilityIdentifier("continueExamModule")
-                        }
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 10) {
-                                ForEach(StudyCategory.allCases) { category in
-                                    Button { withAnimation { proxy.scrollTo(category.rawValue, anchor: .top) } } label: {
-                                        Text(category == .vocabulary ? "词汇" : category.title)
-                                            .font(.subheadline.weight(.medium)).padding(.horizontal, 14).frame(minHeight: 44)
-                                            .background(Sakura.blossom.opacity(0.12), in: Capsule())
-                                    }.buttonStyle(.plain).accessibilityIdentifier("examJump_\(category.rawValue)")
-                                }
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("\(exam.level) · \(exam.dateTitle)").font(.title2.bold())
+                Text("自由选择模块练习，完成后返回目录。进度仅记录练习覆盖情况。")
+                    .font(.subheadline).foregroundStyle(.secondary)
+                if let error { InlineError(message: error) { Task { await load() } } }
+                if loading && types.isEmpty { ProgressView().frame(maxWidth: .infinity) }
+                if !types.isEmpty {
+                    ExamProgressLabel(status: types.allSatisfy { $0.status == "completed" } ? "completed" : types.contains { $0.practiceId != nil } ? "active" : "not_started",
+                                      answered: types.reduce(0) { $0 + $1.answered }, total: types.reduce(0) { $0 + $1.total })
+                    if let type = resumable {
+                        Button { Task { await open(type) } } label: {
+                            Label("继续上次模块 · \(type.nameZh)", systemImage: "play.circle.fill")
+                                .font(.subheadline.weight(.semibold)).frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                        }.disabled(opening != nil).accessibilityIdentifier("continueExamModule")
+                    }
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 10) {
+                            categoryFilter(nil)
+                            ForEach(StudyCategory.allCases) { category in
+                                categoryFilter(category)
                             }
                         }
-                        ForEach(StudyCategory.allCases) { category in
-                            VStack(alignment: .leading, spacing: 10) {
-                                Label(category.title, systemImage: category.symbol).font(.headline)
-                                let modules = types.filter { $0.category == category.rawValue }
-                                if modules.isEmpty { Text("暂无可练模块").font(.caption).foregroundStyle(.secondary) }
-                                ForEach(modules) { type in
-                                    Button { Task { await open(type) } } label: {
-                                        VStack(alignment: .leading, spacing: 8) {
-                                            HStack {
-                                                Text(type.nameZh).font(.subheadline.weight(.semibold)).foregroundStyle(Sakura.ink)
-                                                Spacer(minLength: 8)
-                                                if opening == type.id { ProgressView() }
-                                                else { Text(type.status == "completed" ? "回顾" : type.practiceId == nil ? "开始" : "继续").font(.caption.weight(.semibold)).foregroundStyle(Sakura.rose) }
-                                            }
-                                            ExamProgressLabel(status: type.status, answered: type.answered, total: type.total)
-                                        }.studyCard(padding: 16)
-                                    }.buttonStyle(.plain).disabled(opening != nil).accessibilityIdentifier("examType_\(type.id)")
-                                }
-                            }.id(category.rawValue)
-                        }
-                    } else if !loading && error == nil {
-                        ContentUnavailableView("暂无可练模块", systemImage: "book.closed")
                     }
-                }.padding(20).frame(maxWidth: 720).frame(maxWidth: .infinity)
-            }
+                    ForEach(visibleCategories) { category in
+                        VStack(alignment: .leading, spacing: 10) {
+                            Label(category.title, systemImage: category.symbol).font(.headline)
+                            let modules = types.filter { $0.category == category.rawValue }
+                            if modules.isEmpty { Text("暂无可练模块").font(.caption).foregroundStyle(.secondary) }
+                            ForEach(modules) { type in
+                                Button { Task { await open(type) } } label: {
+                                    VStack(alignment: .leading, spacing: 8) {
+                                        HStack {
+                                            Text(type.nameZh).font(.subheadline.weight(.semibold)).foregroundStyle(Sakura.ink)
+                                            Spacer(minLength: 8)
+                                            if opening == type.id { ProgressView() }
+                                            else { Text(type.status == "completed" ? "回顾" : type.practiceId == nil ? "开始" : "继续").font(.caption.weight(.semibold)).foregroundStyle(Sakura.rose) }
+                                        }
+                                        ExamProgressLabel(status: type.status, answered: type.answered, total: type.total)
+                                    }.studyCard(padding: 16)
+                                }.buttonStyle(.plain).disabled(opening != nil).accessibilityIdentifier("examType_\(type.id)")
+                            }
+                        }
+                    }
+                } else if !loading && error == nil {
+                    ContentUnavailableView("暂无可练模块", systemImage: "book.closed")
+                }
+            }.padding(20).frame(maxWidth: 720).frame(maxWidth: .infinity)
         }.background(SakuraBackground()).navigationTitle("试卷目录").navigationBarTitleDisplayMode(.inline)
             .task { await load() }
             .refreshable { await load() }
             .onChange(of: model.presentedPractice?.id) { _, id in if id == nil { Task { await load() } } }
+    }
+
+    private func categoryFilter(_ category: StudyCategory?) -> some View {
+        let isSelected = selectedCategory == category
+        return Button { selectedCategory = category } label: {
+            Text(category?.title ?? "全部")
+                .font(.subheadline.weight(.medium))
+                .padding(.horizontal, 14)
+                .frame(minHeight: 44)
+                .foregroundStyle(isSelected ? Color.white : Sakura.ink)
+                .background(isSelected ? Sakura.rose : Sakura.blossom.opacity(0.12), in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+        .accessibilityIdentifier("examCategoryFilter_\(category?.rawValue ?? "all")")
     }
 
     private func load() async {

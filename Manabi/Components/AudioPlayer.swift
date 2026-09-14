@@ -14,8 +14,7 @@ final class AudioController {
     private var scrubVersion = 0
     private var seeking = false
     private var wantsPlayback = false
-    var completedLoops = 0
-    var repeatSegment = true
+    var completedPlays = 0
     var isPlaying = false
     var current: Double = 0
     var duration: Double = 0
@@ -32,8 +31,8 @@ final class AudioController {
             Task { @MainActor [weak self] in
                 guard let self, self.loadedURL == url else { return }
                 self.isPlaying = false
-                if self.segment != nil && self.wantsPlayback { self.completedLoops += 1 }
-                if let segment = self.segment, self.repeatSegment, self.wantsPlayback { self.playSegment(segment) }
+                if self.segment != nil && self.wantsPlayback { self.completedPlays += 1 }
+                self.wantsPlayback = false
             }
         }
         statusObserver = item.observe(\.status, options: [.new]) { [weak self] item, _ in
@@ -92,7 +91,7 @@ final class AudioController {
     func playSegment(_ segment: SubtitleSegment) {
         guard segment.endMs > segment.startMs, let player else { return }
         pause()
-        if self.segment?.id != segment.id { completedLoops = 0 }
+        if self.segment?.id != segment.id { completedPlays = 0 }
         self.segment = segment
         wantsPlayback = true
         let version = seekVersion
@@ -121,7 +120,7 @@ final class AudioController {
         if let endObserver { NotificationCenter.default.removeObserver(endObserver) }
         endObserver = nil
         segment = nil
-        completedLoops = 0
+        completedPlays = 0
         player?.replaceCurrentItem(with: nil)
         player = nil
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
@@ -237,13 +236,17 @@ struct IntensiveListeningView: View {
                                 .overlay {
                                     if !revealed { Text("原文已隐藏").font(.subheadline.weight(.medium)).padding(12).background(.regularMaterial, in: Capsule()).accessibilityHidden(true) }
                                 }
-                            Button(revealed ? "隐藏原文" : "显示原文") { revealed.toggle() }
-                                .font(.subheadline.weight(.semibold)).accessibilityIdentifier("toggleTranscript")
+                            Button { revealed.toggle() } label: {
+                                Label(revealed ? "隐藏原文" : "显示原文", systemImage: revealed ? "eye.slash" : "eye")
+                                    .font(.subheadline.weight(.semibold))
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.regular)
+                            .tint(Sakura.rose)
+                            .accessibilityIdentifier("toggleTranscript")
+                            .frame(maxWidth: .infinity, alignment: .trailing)
                         }.studyCard()
-                        Text("已听 \(audio.completedLoops) 遍").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-                        Toggle("单句循环", isOn: $audio.repeatSegment).tint(Sakura.rose)
-                        Text(audio.repeatSegment ? "播放完会重复这一句，不会自动跳到下一句。" : "播放完这一句后暂停，点击播放可以再听一次。")
-                            .font(.caption).foregroundStyle(.secondary)
+                        Text("已听 \(audio.completedPlays) 遍").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                         if let error = audio.error {
                             InlineError(message: error) {
                                 reloadID = UUID()

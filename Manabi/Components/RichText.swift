@@ -5,6 +5,7 @@ import WebKit
 struct RichText: View {
     let content: RichContent
     var fontSize: CGFloat = 18
+    var trimsTrailingNewlines = false
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var webHeight: CGFloat = 48
@@ -16,7 +17,7 @@ struct RichText: View {
                     .frame(maxWidth: .infinity)
                     .frame(height: webHeight)
             } else {
-                NativeRichText(content: content, size: scaledSize, dark: colorScheme == .dark)
+                NativeRichText(trimsTrailingNewlines: trimsTrailingNewlines, content: content, size: scaledSize, dark: colorScheme == .dark)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -31,6 +32,7 @@ struct RichText: View {
 }
 
 struct NativeRichText: UIViewRepresentable {
+    var trimsTrailingNewlines = false
     let content: RichContent
     let size: CGFloat
     let dark: Bool
@@ -60,6 +62,12 @@ struct NativeRichText: UIViewRepresentable {
             let markup = "<meta charset='utf-8'><style>body {font-family:-apple-system;font-size:\(size)px;color:\(color);} p,div {margin:0 0 8px;} </style>\(content.html)"
             if let attributed = try? NSAttributedString(data: Data(markup.utf8), options: [.documentType: NSAttributedString.DocumentType.html, .characterEncoding: String.Encoding.utf8.rawValue], documentAttributes: nil) {
                 let mutable = NSMutableAttributedString(attributedString: attributed)
+                if trimsTrailingNewlines {
+                    while mutable.length > 0,
+                          CharacterSet.newlines.contains(UnicodeScalar((mutable.string as NSString).character(at: mutable.length - 1)) ?? " ") {
+                        mutable.deleteCharacters(in: NSRange(location: mutable.length - 1, length: 1))
+                    }
+                }
                 let paragraph = NSMutableParagraphStyle()
                 paragraph.lineSpacing = 4
                 mutable.addAttribute(.paragraphStyle, value: paragraph, range: NSRange(location: 0, length: mutable.length))

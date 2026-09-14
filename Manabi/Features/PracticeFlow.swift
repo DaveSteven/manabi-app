@@ -10,7 +10,6 @@ struct PracticeFlow: View {
     @State private var submitting = false
     @State private var error: String?
     @State private var showingResult = false
-    @State private var confirmingExit = false
     @State private var showMaterial = false
     @State private var intensiveItem: PracticeItem?
     @State private var audio = AudioController()
@@ -46,7 +45,7 @@ struct PracticeFlow: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button { if showingResult { dismiss() } else { confirmingExit = true } } label: { Image(systemName: "xmark") }
+                    Button { dismiss() } label: { Image(systemName: "xmark") }
                         .accessibilityLabel("退出练习").accessibilityIdentifier("exitPractice").disabled(submitting)
                 }
                 if !showingResult {
@@ -55,10 +54,6 @@ struct PracticeFlow: View {
                     }
                 }
             }
-            .alert("退出本次练习？", isPresented: $confirmingExit) {
-                Button("保存进度并退出") { dismiss() }.accessibilityIdentifier("confirmPracticeExit")
-                Button("继续练习", role: .cancel) {}.accessibilityIdentifier("cancelPracticeExit")
-            } message: { Text("已提交的答案会保留，下次可以接着练习。尚未提交的选择不会保存。") }
             .interactiveDismissDisabled(submitting)
         }
         .sheet(item: $intensiveItem) { item in
@@ -131,10 +126,9 @@ struct PracticeFlow: View {
                         } else {
                             RichText(content: item.question.prompt, fontSize: 20)
                         }
-                        DisclosureGroup("答题说明") {
-                            RichText(content: item.question.source.section, fontSize: 15).padding(.top, 10)
-                        }.font(.caption).foregroundStyle(.secondary)
-                    }.studyCard()
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .studyCard()
 
                     VStack(spacing: 12) {
                         ForEach(item.question.options) { option in optionButton(option, item: item) }
@@ -179,15 +173,15 @@ struct PracticeFlow: View {
             guard pendingElapsed == nil, !submitting, feedback == nil else { return }
             selected = option.id
         } label: {
-            HStack(alignment: .top, spacing: 13) {
+            HStack(alignment: .center, spacing: 13) {
                 Text("\(option.position + 1)").font(.subheadline.weight(.semibold)).monospacedDigit()
                     .frame(width: 30, height: 30)
                     .background((chosen || right) ? tint.opacity(0.14) : Sakura.blossom.opacity(0.10), in: Circle())
                     .foregroundStyle((chosen || right) ? tint : .secondary)
-                RichText(content: option.content, fontSize: 18).allowsHitTesting(false)
+                RichText(content: option.content, fontSize: 18, trimsTrailingNewlines: true).allowsHitTesting(false)
                 if right || wrong || chosen {
                     Image(systemName: right ? "checkmark.circle.fill" : (wrong ? "xmark.circle.fill" : "circle.inset.filled"))
-                        .foregroundStyle(tint).padding(.top, 5)
+                        .foregroundStyle(tint)
                 }
             }.padding(17).frame(maxWidth: .infinity, alignment: .leading)
                 .background((chosen || right) ? tint.opacity(0.06) : Sakura.surface, in: RoundedRectangle(cornerRadius: 20))

@@ -63,7 +63,7 @@ final class ManabiTests: XCTestCase {
     }
 
     @MainActor
-    func testSentencePlaybackLoopsAndStopsAtBoundary() async throws {
+    func testSentencePlaybackStopsAtBoundaryAndCanReplay() async throws {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".caf")
         defer { try? FileManager.default.removeItem(at: url) }
         let format = try XCTUnwrap(AVAudioFormat(standardFormatWithSampleRate: 8000, channels: 1))
@@ -89,22 +89,22 @@ final class ManabiTests: XCTestCase {
         let sentence = SubtitleSegment(startMs: 100, endMs: 450, text: "test")
         audio.playSegment(sentence)
         for _ in 0..<80 {
-            if audio.completedLoops >= 2 { break }
+            if audio.completedPlays == 1 && !audio.isPlaying { break }
             try await Task.sleep(for: .milliseconds(100))
         }
-        XCTAssertGreaterThanOrEqual(audio.completedLoops, 2)
-        audio.pause()
-        let loops = audio.completedLoops
-        try await Task.sleep(for: .milliseconds(700))
-        XCTAssertEqual(audio.completedLoops, loops)
+        XCTAssertEqual(audio.completedPlays, 1)
         XCTAssertFalse(audio.isPlaying)
-        audio.repeatSegment = false
+        audio.pause()
+        let loops = audio.completedPlays
+        try await Task.sleep(for: .milliseconds(700))
+        XCTAssertEqual(audio.completedPlays, loops)
+        XCTAssertFalse(audio.isPlaying)
         audio.playSegment(sentence)
         for _ in 0..<50 {
-            if audio.completedLoops > loops && !audio.isPlaying { break }
+            if audio.completedPlays > loops && !audio.isPlaying { break }
             try await Task.sleep(for: .milliseconds(100))
         }
-        XCTAssertEqual(audio.completedLoops, loops + 1)
+        XCTAssertEqual(audio.completedPlays, loops + 1)
         XCTAssertFalse(audio.isPlaying)
         XCTAssertLessThanOrEqual(audio.current, 0.5)
     }
