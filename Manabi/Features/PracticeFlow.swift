@@ -18,6 +18,9 @@ struct PracticeFlow: View {
     @State private var network = MediaNetwork.shared
     @State private var pendingElapsed: Int?
 
+    @State private var retrying = false
+    @State private var retryFeedback: Feedback?
+
     let returnsToExamDirectory: Bool
 
     init(practice: Practice, returnsToExamDirectory: Bool = false) {
@@ -27,7 +30,12 @@ struct PracticeFlow: View {
         _showingResult = State(initialValue: practice.status == "completed")
     }
 
-    private var item: PracticeItem? { practice.items.indices.contains(index) ? practice.items[index] : nil }
+    private var item: PracticeItem? {
+        guard practice.items.indices.contains(index) else { return nil }
+        let original = practice.items[index]
+        guard retrying else { return original }
+        return PracticeItem(id: original.id, position: original.position, question: original.question, feedback: retryFeedback)
+    }
 
     var body: some View {
         NavigationStack {
@@ -65,6 +73,8 @@ struct PracticeFlow: View {
         }
         .onDisappear { audio.stop() }
         .onChange(of: index) { _, _ in
+            retrying = false
+            retryFeedback = nil
             selected = nil
             error = nil
             pendingElapsed = nil
@@ -91,7 +101,7 @@ struct PracticeFlow: View {
                             ForEach(0..<count, id: \.self) { position in
                                 Capsule()
                                     .fill(position == index ? Sakura.rose :
-                                          position < index ? Sakura.rose.opacity(0.5) : Sakura.blossom.opacity(0.2))
+                                          practice.items.indices.contains(position) && practice.items[position].feedback != nil ? Sakura.rose.opacity(0.5) : Sakura.blossom.opacity(0.2))
                                     .frame(maxWidth: .infinity)
                             }
                         }
@@ -136,7 +146,9 @@ struct PracticeFlow: View {
                         }
                         if item.question.prompt.isEmpty {
                             Text(item.question.typeId == "text_grammar" ? "请选择文章中第 \(ordinal) 个空的答案。" : (item.question.material.audioUrl == nil ? "阅读材料，选出最合适的答案。" : "请听音频，选出最合适的答案。"))
-                                .font(.title3.weight(.medium))
+                                .font(.body)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .fixedSize(horizontal: false, vertical: true)
                         } else {
                             RichText(content: item.question.prompt, fontSize: 20)
                         }
@@ -160,6 +172,47 @@ struct PracticeFlow: View {
                         ListeningPlayer(url: url, examID: item.question.source.examId, controller: audio)
                         Divider()
                             .padding(.vertical, 4)
+                    }
+                    HStack(spacing: 12) {
+                        Button {
+                            index -= 1
+                            proxy.scrollTo("top", anchor: .top)
+                        } label: {
+                            Label("上一题", systemImage: "chevron.left")
+                                .frame(maxWidth: .infinity, minHeight: 44)
+                        }
+                        .disabled(index == 0 || submitting || pendingElapsed != nil)
+                        .accessibilityIdentifier("previousQuestion")
+                        if practice.items[index].feedback != nil {
+                            Button {
+                                retrying = true
+                                retryFeedback = nil
+                                selected = nil
+                                pendingElapsed = nil
+                                error = nil
+                                audio.pause()
+                                proxy.scrollTo("top", anchor: .top)
+                            } label: {
+                                Text("重新练习本题").frame(minHeight: 44)
+                            }
+                            .disabled(submitting)
+                            .accessibilityIdentifier("retryQuestion")
+                        }
+                        Button {
+                            index += 1
+                            proxy.scrollTo("top", anchor: .top)
+                        } label: {
+                            Label("下一题", systemImage: "chevron.right")
+                                .frame(maxWidth: .infinity, minHeight: 44)
+                        }
+                        .disabled(index >= practice.items.count - 1 || practice.items[index].feedback == nil || submitting)
+                        .accessibilityIdentifier("nextQuestion")
+                    }
+                    .font(.subheadline)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+                    if retrying {
+                        Text("本次重练不改变原成绩").font(.caption).foregroundStyle(.secondary)
                     }
                     PrimaryButton(item.feedback == nil ? (pendingElapsed == nil ? "确认答案" : "重试提交") : (index == practice.items.count - 1 ? "查看练习结果" : "下一题"), symbol: item.feedback == nil ? nil : "arrow.right", loading: submitting, disabled: item.feedback == nil && selected == nil) {
                         if item.feedback != nil {
@@ -275,6 +328,15 @@ struct PracticeFlow: View {
 
     private func submit(_ item: PracticeItem) async {
         guard let selected, !submitting else { return }
+        if retrying, let original = practice.items[index].feedback {
+            retryFeedback = Feedback(
+                chosenOptionId: selected, correctOptionId: original.correctOptionId,
+                isCorrect: selected == original.correctOptionId,
+                explanation: original.explanation, explanationAvailable: original.explanationAvailable,
+                translation: original.translation, subtitles: original.subtitles,
+                answeredAt: original.answeredAt, elapsedMs: 0)
+            return
+        }
         if pendingElapsed == nil { pendingElapsed = min(86_400_000, max(0, Int((elapsed + Date().timeIntervalSince(foregroundStart)) * 1000))) }
         submitting = true
         error = nil
@@ -282,6 +344,7 @@ struct PracticeFlow: View {
         do {
             let updated: PracticeItem = try await model.api.post("practices/\(practice.id)/items/\(item.id)/answer", body: AnswerBody(optionId: selected, elapsedMs: pendingElapsed ?? 0))
             practice.apply(updated)
+            pendingElapsed = nil
         } catch { self.error = AppModel.describe(error) }
     }
 }

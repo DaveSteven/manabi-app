@@ -63,6 +63,43 @@ final class ManabiTests: XCTestCase {
     }
 
     @MainActor
+    func testRealMP3SentenceRevisit() async throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+        let url = root.appendingPathComponent("mojitest_spider/data/assets/audio/62193870-689f-48ff-8bef-1d18a2f4f7ee2025年12月N3-問題3-1番.mp3")
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            throw XCTSkip("Local source exam MP3 is unavailable")
+        }
+        let audio = AudioController()
+        defer { audio.stop() }
+        audio.load(url)
+        let first = SubtitleSegment(startMs: 23150, endMs: 26000, text: "女：そうなの？どうだった？")
+        let second = SubtitleSegment(startMs: 34400, endMs: 36000, text: "女：そうなんだ。")
+        for target in [first, second, first, second, first] {
+            audio.playSegment(target)
+            for _ in 0..<200 {
+                if audio.isPlaying { break }
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            XCTAssertTrue(audio.isPlaying)
+            XCTAssertEqual(audio.current, Double(target.startMs) / 1000, accuracy: 0.1)
+            let started = Date()
+            for _ in 0..<250 {
+                if audio.completedPlays == 1 && !audio.isPlaying { break }
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            XCTAssertEqual(audio.completedPlays, 1)
+            XCTAssertFalse(audio.isPlaying)
+            let expectedDuration = Double(target.endMs - target.startMs) / 1000
+            // Initial decoder startup can delay playback; it must never truncate it.
+            XCTAssertGreaterThanOrEqual(Date().timeIntervalSince(started), expectedDuration - 0.1)
+            XCTAssertLessThan(Date().timeIntervalSince(started), expectedDuration + 1.0)
+            try await Task.sleep(for: .milliseconds(300))
+            XCTAssertEqual(audio.current, Double(target.endMs) / 1000, accuracy: 0.05)
+        }
+    }
+
+    @MainActor
     func testSentencePlaybackStopsAtBoundaryAndCanReplay() async throws {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".caf")
         defer { try? FileManager.default.removeItem(at: url) }
@@ -113,6 +150,54 @@ final class ManabiTests: XCTestCase {
         XCTAssertEqual(audio.completedPlays, loops + 1)
         XCTAssertFalse(audio.isPlaying)
         XCTAssertLessThanOrEqual(audio.current, 0.5)
+        let later = SubtitleSegment(startMs: 1200, endMs: 1700, text: "later")
+        for target in [later, sentence, later, sentence, later] {
+            audio.playSegment(target)
+            try await Task.sleep(for: .milliseconds(15))
+        }
+        for _ in 0..<50 {
+            if audio.isPlaying && audio.current >= 1.2 { break }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertTrue(audio.isPlaying)
+        XCTAssertGreaterThanOrEqual(audio.current, 1.2)
+        XCTAssertLessThan(audio.current, 1.7)
+        for _ in 0..<40 {
+            if audio.completedPlays == 1 && !audio.isPlaying { break }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        XCTAssertEqual(audio.completedPlays, 1)
+        XCTAssertFalse(audio.isPlaying)
+        audio.playSegment(sentence)
+        for _ in 0..<40 {
+            if audio.completedPlays == 1 && !audio.isPlaying { break }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        XCTAssertEqual(audio.completedPlays, 1)
+        XCTAssertLessThanOrEqual(audio.current, 0.5)
+        // Play each sentence to completion, then walk backwards repeatedly.
+        // Check actual progress and wall time, not just the selected sentence ID.
+        for target in [later, sentence, later, sentence] {
+            let started = Date()
+            audio.playSegment(target)
+            for _ in 0..<100 {
+                if audio.isPlaying { break }
+                try await Task.sleep(for: .milliseconds(10))
+            }
+            XCTAssertTrue(audio.isPlaying)
+            XCTAssertEqual(audio.current, Double(target.startMs) / 1000, accuracy: 0.1)
+            for _ in 0..<100 {
+                if audio.completedPlays == 1 && !audio.isPlaying { break }
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            XCTAssertEqual(audio.completedPlays, 1)
+            XCTAssertFalse(audio.isPlaying)
+            // Allow the periodic observer to report the final player position.
+            try await Task.sleep(for: .milliseconds(300))
+            XCTAssertEqual(audio.current, Double(target.endMs) / 1000, accuracy: 0.05)
+            XCTAssertGreaterThanOrEqual(Date().timeIntervalSince(started),
+                                      Double(target.endMs - target.startMs) / 1000 - 0.05)
+        }
         audio.playFrom(Double(sentence.startMs) / 1000)
         for _ in 0..<30 {
             if audio.current > 1 { break }

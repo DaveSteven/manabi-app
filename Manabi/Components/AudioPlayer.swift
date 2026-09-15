@@ -25,12 +25,21 @@ final class AudioController {
         guard url != loadedURL else { return }
         stop()
         loadedURL = url
-        let item = AVPlayerItem(url: url)
+        // MP3 may lack a complete time index. Exact seeks also require the
+        // asset to build precise timing instead of using approximate offsets.
+        let asset = AVURLAsset(url: url, options: [AVURLAssetPreferPreciseDurationAndTimingKey: true])
+        let item = AVPlayerItem(asset: asset)
         let player = AVPlayer(playerItem: item)
         self.player = player
         endObserver = NotificationCenter.default.addObserver(forName: .AVPlayerItemDidPlayToEndTime, object: item, queue: .main) { [weak self] _ in
             Task { @MainActor [weak self] in
                 guard let self, self.loadedURL == url else { return }
+                guard !self.seeking else { return }
+                if let segment = self.segment {
+                    let position = self.player?.currentTime().seconds ?? 0
+                    guard position >= Double(segment.endMs) / 1000 - 0.02,
+                          (self.player?.rate ?? 0) == 0 else { return }
+                }
                 self.isPlaying = false
                 if self.segment != nil && self.wantsPlayback { self.completedPlays += 1 }
                 self.wantsPlayback = false
@@ -90,26 +99,45 @@ final class AudioController {
         }
     }
 
-    func pause() { wantsPlayback = false; seekVersion += 1; player?.pause(); isPlaying = false }
+    func pause() {
+        wantsPlayback = false
+        seekVersion += 1
+        player?.pause()
+        if segment != nil {
+            player?.currentItem?.cancelPendingSeeks()
+            seeking = false
+        }
+        isPlaying = false
+    }
 
     func playSegment(_ segment: SubtitleSegment) {
         guard segment.endMs > segment.startMs, let player else { return }
         pause()
         scrubVersion += 1
-        seeking = false
+        seeking = true
+        error = nil
         if self.segment?.id != segment.id { completedPlays = 0 }
         self.segment = segment
         wantsPlayback = true
         let version = seekVersion
-        player.currentItem?.forwardPlaybackEndTime = CMTime(seconds: Double(segment.endMs) / 1000, preferredTimescale: 1000)
+        // Remove the previous sentence's boundary before seeking across it.
+        // Install the new boundary only after the latest seek has completed.
+        player.currentItem?.forwardPlaybackEndTime = .invalid
         do {
             try AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio)
             try AVAudioSession.sharedInstance().setActive(true)
-        } catch { self.error = "暂时无法启用音频播放，请重试。"; return }
+        } catch { seeking = false; wantsPlayback = false; self.error = "暂时无法启用音频播放，请重试。"; return }
         current = Double(segment.startMs) / 1000
         player.seek(to: CMTime(seconds: current, preferredTimescale: 1000), toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] completed in
             Task { @MainActor [weak self] in
-                guard let self, completed, self.seekVersion == version else { return }
+                guard let self, self.seekVersion == version else { return }
+                self.seeking = false
+                guard completed, self.wantsPlayback else {
+                    self.wantsPlayback = false
+                    return
+                }
+                self.player?.currentItem?.forwardPlaybackEndTime = CMTime(seconds: Double(segment.endMs) / 1000, preferredTimescale: 1000)
+                self.current = self.player?.currentTime().seconds ?? Double(segment.startMs) / 1000
                 self.player?.play()
                 self.isPlaying = true
             }
@@ -282,18 +310,30 @@ struct IntensiveListeningView: View {
                     VStack(spacing: 14) {
                         ProgressView(value: min(max((audio.current * 1000 - Double(segment.startMs)) / Double(segment.endMs - segment.startMs), 0), 1))
                             .tint(Sakura.rose).accessibilityLabel("当前句播放进度")
-                        HStack(spacing: 24) {
-                            Button { move(-1) } label: { Label("上一句", systemImage: "backward.end.fill").labelStyle(.titleAndIcon).frame(minHeight: 48) }
+                        HStack(spacing: 12) {
+                            Button { move(-1) } label: {
+                                Label("上一句", systemImage: "backward.end.fill")
+                                    .labelStyle(.titleAndIcon)
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.75)
+                                    .frame(maxWidth: .infinity, minHeight: 48)
+                                    .contentShape(Rectangle())
+                            }
                                 .disabled(index == 0).accessibilityIdentifier("previousSentence")
-                            Spacer(minLength: 0)
                             Button {
                                 if audio.isPlaying { audio.pause() } else { audio.playSegment(segment) }
                             } label: {
                                 Image(systemName: audio.isPlaying ? "pause.fill" : "play.fill")
                                     .font(.title2).frame(width: 64, height: 64).foregroundStyle(.white).background(Sakura.rose, in: Circle())
                             }.accessibilityLabel(audio.isPlaying ? "暂停当前句" : "播放当前句").accessibilityIdentifier("playSentence")
-                            Spacer(minLength: 0)
-                            Button { move(1) } label: { Label("下一句", systemImage: "forward.end.fill").labelStyle(.titleAndIcon).frame(minHeight: 48) }
+                            Button { move(1) } label: {
+                                Label("下一句", systemImage: "forward.end.fill")
+                                    .labelStyle(.titleAndIcon)
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.75)
+                                    .frame(maxWidth: .infinity, minHeight: 48)
+                                    .contentShape(Rectangle())
+                            }
                                 .disabled(index == lesson.segments.count - 1).accessibilityIdentifier("nextSentence")
                         }.font(.subheadline.weight(.semibold)).buttonStyle(.plain)
                     }.padding(.horizontal, 24).padding(.vertical, 16).frame(maxWidth: .infinity).background(.regularMaterial)

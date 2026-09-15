@@ -42,6 +42,18 @@ final class ManabiUITests: XCTestCase {
         resume.tap()
         XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "option_0").firstMatch.waitForExistence(timeout: 15))
         XCTAssertTrue(app.staticTexts["2 / 5"].exists)
+        app.buttons["previousQuestion"].tap()
+        XCTAssertTrue(app.staticTexts["1 / 5"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["previousQuestion"].isEnabled)
+        app.buttons["retryQuestion"].tap()
+        XCTAssertFalse(app.otherElements["answerFeedback"].exists)
+        let retryOption = app.descendants(matching: .any).matching(identifier: "option_1").firstMatch
+        if !retryOption.isHittable { app.swipeUp() }
+        retryOption.tap()
+        app.buttons["answerAction"].tap()
+        XCTAssertEqual(app.buttons["answerAction"].label, "下一题")
+        app.buttons["nextQuestion"].tap()
+        XCTAssertTrue(app.staticTexts["2 / 5"].waitForExistence(timeout: 5))
         for number in 2...5 {
             let choice = app.descendants(matching: .any).matching(identifier: "option_0").firstMatch
             XCTAssertTrue(choice.waitForExistence(timeout: 10))
